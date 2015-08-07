@@ -57,6 +57,19 @@ drawHexagon = do
 
 drawGrid :: (Int, Int) -> IO ()
 drawGrid (numRows, numCols) = do
+  let dx = 2.0 / (fromIntegral numCols + 0.5) :: GLfloat
+      dy = 2.0 / (fromIntegral numRows) :: GLfloat
+      dist = min dx (2.0 * dy / sqrt 3.0)
+      distX = dist
+      distY = dist * (sqrt 3.0) / 2.0
+      ix = [(row, col) | row <- [0 .. numRows - 1], col <- [0 .. numCols - 1]]
+  forM_ ix $ \(row, col) -> do
+    let cx = -1.0 + dist / 2.0 + distX * (fromIntegral col) + (if even row then 0 else distX / 2.0)
+        cy = 1.0 - dist / 2.0 - distY * (fromIntegral row)
+    GL.preservingMatrix $ do
+      translate cx cy
+      scale (dist / 2.0) (dist / 2.0)
+      drawHexagon
   return ()
 
 display :: IO ()
@@ -65,7 +78,7 @@ display = do
   GL.clear [GL.ColorBuffer]
 
   GL.loadIdentity
-  drawGrid (4, 9)
+  drawGrid (20, 10)
 
 rendererLoop :: IORef RendererState -> IO ()
 rendererLoop rendererState = do
