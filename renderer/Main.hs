@@ -9,18 +9,16 @@ import System.Exit
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Graphics.UI.GLFW as GLFW
 
+import Core
+import CommandLine
+
 data RendererState = RendererState { rsQuit :: Bool
-                                   , rsNumRows :: Int
-                                   , rsNumCols :: Int
+                                   , input  :: Input
                                    }
                    deriving (Show, Eq)
 
 setQuit :: RendererState -> RendererState
 setQuit rs = rs { rsQuit = True }
-
-setNumRows, setNumCols :: Int -> RendererState -> RendererState
-setNumRows nr rs = rs { rsNumRows = nr }
-setNumCols nc rs = rs { rsNumCols = nc }
 
 windowWidth = 800
 windowHeight = 600
@@ -67,8 +65,8 @@ drawHexagon = do
 drawGrid :: IORef RendererState -> IO ()
 drawGrid rendererState = do
   rs <- readIORef rendererState
-  let numRows = rsNumRows rs
-      numCols = rsNumCols rs
+  let numRows = height $ input rs
+      numCols = width $ input rs
 
       dx = 2.0 / (fromIntegral numCols + 0.5) :: GLfloat
       dy = 2.0 / (fromIntegral numRows) :: GLfloat
@@ -105,17 +103,8 @@ rendererLoop rendererState = do
 
 type CLI = State [String]
 
-parseArgs :: RendererState -> [String] -> RendererState
-parseArgs rs [] = rs
-parseArgs rs (s:ss) =
-    case s of
-      "-h" -> parseArgs (rs { rsNumRows = (read $ head ss) }) (tail ss)
-      "-w" -> parseArgs (rs { rsNumCols = (read $ head ss) }) (tail ss)
-      _    -> parseArgs rs ss
-
 main :: IO ()
 main = do
-  args <- getArgs
 
   runOrDie GLFW.initialize "GLFW: can't initialize"
   runOrDie (GLFW.openWindow
@@ -125,7 +114,13 @@ main = do
        "GLFW: can't create window"
   GLFW.windowTitle $= "IFPC2015"
 
-  rendererState <- newIORef $ parseArgs (RendererState False 1 1) args
+  commandLine <- parseCommandLine
+  let ip = inputPath commandLine
+  when (ip == "") $ fail "Input is not specified."
+
+  input <- readInput ip
+  rendererState <- newIORef $ RendererState False input
+
   GLFW.windowCloseCallback $= onClose rendererState
   GLFW.keyCallback $= onKey rendererState
   rendererLoop rendererState
