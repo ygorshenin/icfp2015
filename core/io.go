@@ -9,30 +9,29 @@ import (
 )
 
 type Problem struct {
-	Id           int
-	Units        []Unit
-	Width        int
-	Height       int
-	Filled       []Cell
-	SourceLength int
-	SourceSeeds  []int
+	id           int
+	units        []Unit
+	width        int
+	height       int
+	filled       []Cell
+	sourceLength int
+	sourceSeeds  []int
 }
 
 type Cell struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+	x, y int
 }
 
 type Unit struct {
-	Cells []Cell `json:"members"`
-	Pivot Cell
+	cells []Cell `json:"members"`
+	pivot Cell
 }
 
 type OutputEntry struct {
-	ProblemId int    `json:"problemId"`
-	Seed      int    `json:"seed"`
-	Tag       string `json:"tag"`
-	Solution  string `json:"solution"`
+	ProblemId int    
+	Seed      uint64    
+	Tag       string 
+	Solution  string 
 }
 type Output []OutputEntry
 
@@ -64,8 +63,6 @@ func WriteOutput(o Output, w io.Writer) error {
 
 	}
 	return nil
-	// fmt.Println(string(b))
-	// return nil
 }
 
 func WriteOutputToFile(o Output, filename string) {
