@@ -156,8 +156,9 @@ step rendererState = do
       unit' = applyCommand command unit
   if isBlocked input filled unit'
   then do
+    let filled' = removeFullRows input (filled ++ (members unit))
     writeIORef rendererState $ rs { rsUnits = units
-                                  , rsFilled = filled ++ (members unit)
+                                  , rsFilled = filled'
                                   , rsCommands = commands
                                   , rsTimestamp = ts
                                   }
