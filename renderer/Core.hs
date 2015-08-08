@@ -3,8 +3,10 @@ module Core ( Cell (..)
             , Unit (..)
             , Input (..)
             , readInput
-            , cellAdd
-            , getUnitOffset
+            , spawnUnit
+            , applyCommand
+            , isBlocked
+            , unitsIxs
             ) where
 
 import Data.Aeson
@@ -15,7 +17,9 @@ import qualified Data.ByteString.Lazy as L
 import Control.Applicative
 import Control.Monad
 
-data Cell = Cell { cellX :: Int, cellY :: Int }
+data Cell = Cell { cellX :: Int
+                 , cellY :: Int
+                 }
           deriving (Show, Eq)
 
 cellAdd :: Cell -> Cell -> Cell
@@ -36,7 +40,36 @@ data Input = Input { id :: Int
                    }
                  deriving (Show, Eq)
 
--- Returns offset for a unit
+data Command = MoveW
+             | MoveE
+             | MoveSW
+             | MoveSE
+             | RCW
+             | RCCW
+               deriving (Show, Eq)
+
+getCommand :: Char -> Command
+getCommand c | c `elem` moveW  = MoveW
+             | c `elem` moveE  = MoveE
+             | c `elem` moveSW = MoveSW
+             | c `elem` moveSE = MoveSE
+             | c `elem` rcw    = RCW
+             | c `elem` rccw   = RCCW
+             | otherwise       = error $ "Unknown command:" ++ show c
+    where moveW  = "p'!.03"
+          moveE  = "bcefy2"
+          moveSW = "aghij4"
+          moveSE = "lmno 5"
+          rcw    = "dqrvz1"
+          rccw   = "kstuwx"
+
+data Output = Output { problemId :: Int
+                     , seed :: Int
+                     , tag :: String
+                     , solution :: String
+                     } deriving (Show, Eq)
+
+-- Returns offset for a unit.
 getUnitOffset :: Input -> Int -> Cell
 getUnitOffset input unit = Cell { cellX = x, cellY = y }
     where numCols = width input
@@ -47,6 +80,55 @@ getUnitOffset input unit = Cell { cellX = x, cellY = y }
           y = -topMost
           xlim = numCols - leftMost - rightMost - 1
           x = if xlim < 0 then (xlim + 1) `div` 2 else xlim `div` 2
+
+-- Shifts unit by a given offset.
+shiftUnit :: Unit -> Cell -> Unit
+shiftUnit (Unit ms pv) c = Unit (map shift ms) (shift pv)
+    where shift = cellAdd c
+
+-- Spawns unit on an initial position.
+spawnUnit :: Input -> Int -> Unit
+spawnUnit input unit = shiftUnit ((units input) !! unit) offset
+    where offset = getUnitOffset input unit
+
+-- Applies a given command to a unit.
+applyCommand :: Command -> Unit -> Unit
+applyCommand MoveE unit = shiftUnit unit Cell { cellX = 1, cellY = 0 }
+applyCommand MoveW unit = shiftUnit unit Cell { cellX = -1, cellY = 0 }
+applyCommand MoveSE (Unit ms pv) = Unit (map shift ms) (shift pv)
+    where shift (Cell x y) = if even y
+                             then (Cell x (y + 1))
+                             else (Cell (x + 1) (y + 1))
+applyCommand MoveSW (Unit ms pv) = Unit (map shift ms) (shift pv)
+    where shift (Cell x y) = if even y
+                             then (Cell (x - 1) (y + 1))
+                             else (Cell x (y + 1))
+applyCommand cmd _ = error $ "Unsopported command:" ++ show cmd
+
+nextRand :: (Int, Int) -> (Int, Int)
+nextRand (_, x) = (fromIntegral $ (x' `quot` 2 ^ 16) `mod` 2 ^ 15, fromIntegral $ x')
+    where mdl = 2 ^ 32 :: Integer
+          mul = 1103515245 :: Integer
+          inc = 12345 :: Integer
+          x'  = ((fromIntegral x) * mul + inc) `mod` mdl :: Integer
+
+genRands :: Int -> [Int]
+genRands seed = map fst $ iterate nextRand (0, seed)
+
+unitsIxs :: Input -> Int -> [Int]
+unitsIxs input seed = map (`mod` numUnits) $ genRands seed
+    where numUnits = length $ units input
+
+-- Returns true when unit is in a blocked state.
+isBlocked :: Input -> Unit -> Bool
+isBlocked input unit = inFilled || outOfBorder
+    where w = width input
+          h = height input
+          ms = members unit
+          inFilled = not . null $ intersect (filled input) ms
+          outOfBorder = any invalidCell ms
+
+          invalidCell (Cell x y) = x < 0 || x >= w || y < 0 || y >= h
 
 instance FromJSON Cell where
     parseJSON (Object v) = Cell <$>
@@ -68,6 +150,13 @@ instance FromJSON Input where
                            v .: "sourceLength" <*>
                            v .: "sourceSeeds"
     parseJSON _ = mzero
+
+instance FromJSON Output where
+    parseJSON (Object v) = Output <$>
+                           v .: "problemId" <*>
+                           v .: "seed" <*>
+                           v .: "tag" <*>
+                           v .: "solution"
 
 readInput :: FilePath -> IO Input
 readInput path = liftM (fromJust . decode) $ L.readFile path
