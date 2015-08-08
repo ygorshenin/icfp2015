@@ -2,11 +2,12 @@
 module Core ( Cell (..)
             , Unit (..)
             , Input (..)
-            , readInput
-            , spawnUnit
+            , Output (..)
+            , Command (..)
+            , readJSON
+            , genUnits
             , applyCommand
             , isBlocked
-            , unitsIxs
             ) where
 
 import Data.Aeson
@@ -21,9 +22,6 @@ data Cell = Cell { cellX :: Int
                  , cellY :: Int
                  }
           deriving (Show, Eq)
-
-cellAdd :: Cell -> Cell -> Cell
-cellAdd (Cell x1 y1) (Cell x2 y2) = Cell (x1 + x2) (y1 + y2)
 
 data Unit = Unit { members :: [Cell]
                  , pivot :: Cell
@@ -40,6 +38,12 @@ data Input = Input { id :: Int
                    }
                  deriving (Show, Eq)
 
+data Output = Output { problemId :: Int
+                     , seed :: Int
+                     , tag :: String
+                     , solution :: [Command]
+                     } deriving (Show, Eq)
+
 data Command = MoveW
              | MoveE
              | MoveSW
@@ -48,14 +52,14 @@ data Command = MoveW
              | RCCW
                deriving (Show, Eq)
 
-getCommand :: Char -> Command
-getCommand c | c `elem` moveW  = MoveW
-             | c `elem` moveE  = MoveE
-             | c `elem` moveSW = MoveSW
-             | c `elem` moveSE = MoveSE
-             | c `elem` rcw    = RCW
-             | c `elem` rccw   = RCCW
-             | otherwise       = error $ "Unknown command:" ++ show c
+parseCommand :: Char -> Command
+parseCommand c | c `elem` moveW  = MoveW
+               | c `elem` moveE  = MoveE
+               | c `elem` moveSW = MoveSW
+               | c `elem` moveSE = MoveSE
+               | c `elem` rcw    = RCW
+               | c `elem` rccw   = RCCW
+               | otherwise       = error $ "Unknown command:" ++ show c
     where moveW  = "p'!.03"
           moveE  = "bcefy2"
           moveSW = "aghij4"
@@ -63,17 +67,10 @@ getCommand c | c `elem` moveW  = MoveW
           rcw    = "dqrvz1"
           rccw   = "kstuwx"
 
-data Output = Output { problemId :: Int
-                     , seed :: Int
-                     , tag :: String
-                     , solution :: String
-                     } deriving (Show, Eq)
-
 -- Returns offset for a unit.
-getUnitOffset :: Input -> Int -> Cell
-getUnitOffset input unit = Cell { cellX = x, cellY = y }
+getUnitOffset :: Input -> Unit -> Cell
+getUnitOffset input (Unit ms _) = Cell { cellX = x, cellY = y }
     where numCols = width input
-          ms      = members $ (units input) !! unit
           topMost   = cellY $ minimumBy (compare `on` cellY) ms
           leftMost  = cellX $ minimumBy (compare `on` cellX) ms
           rightMost = cellX $ maximumBy (compare `on` cellX) ms
@@ -85,10 +82,11 @@ getUnitOffset input unit = Cell { cellX = x, cellY = y }
 shiftUnit :: Unit -> Cell -> Unit
 shiftUnit (Unit ms pv) c = Unit (map shift ms) (shift pv)
     where shift = cellAdd c
+          cellAdd (Cell x1 y1) (Cell x2 y2) = Cell (x1 + x2) (y1 + y2)
 
 -- Spawns unit on an initial position.
-spawnUnit :: Input -> Int -> Unit
-spawnUnit input unit = shiftUnit ((units input) !! unit) offset
+spawnUnit :: Input -> Unit -> Unit
+spawnUnit input unit = shiftUnit unit offset
     where offset = getUnitOffset input unit
 
 -- Applies a given command to a unit.
@@ -115,24 +113,25 @@ nextRand (_, x) = (fromIntegral $ (x' `quot` 2 ^ 16) `mod` 2 ^ 15, fromIntegral 
 genRands :: Int -> [Int]
 genRands seed = map fst $ iterate nextRand (0, seed)
 
-unitsIxs :: Input -> Int -> [Int]
-unitsIxs input seed = map (`mod` numUnits) $ genRands seed
-    where numUnits = length $ units input
+genUnits :: Input -> Int -> [Unit]
+genUnits input seed = map (\ix -> spawnUnit input $ us !! (ix `mod` ns)) $ genRands seed
+    where us = units input
+          ns = length us
 
 -- Returns true when unit is in a blocked state.
-isBlocked :: Input -> Unit -> Bool
-isBlocked input unit = inFilled || outOfBorder
+isBlocked input filled unit = inFilled || outOfBorder
     where w = width input
           h = height input
           ms = members unit
-          inFilled = not . null $ intersect (filled input) ms
+          inFilled = not . null $ intersect filled ms
           outOfBorder = any invalidCell ms
 
           invalidCell (Cell x y) = x < 0 || x >= w || y < 0 || y >= h
 
 instance FromJSON Cell where
     parseJSON (Object v) = Cell <$>
-                           v .: "x" <*> v .: "y"
+                           v .: "x" <*>
+                           v .: "y"
 
 instance FromJSON Unit where
     parseJSON (Object v) = Unit <$>
@@ -156,7 +155,7 @@ instance FromJSON Output where
                            v .: "problemId" <*>
                            v .: "seed" <*>
                            v .: "tag" <*>
-                           v .: "solution"
+                           liftM (map parseCommand) (v .: "solution")
 
-readInput :: FilePath -> IO Input
-readInput path = liftM (fromJust . decode) $ L.readFile path
+readJSON :: FromJSON a => FilePath -> IO a
+readJSON = liftM (fromJust . decode) . L.readFile
