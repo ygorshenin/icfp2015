@@ -15,4 +15,4 @@ The project has following structure:
                   Aeson (and their dependencies). To install them on a
                   UNIX family system type following in a shell:
                   $ cabal install GLFW
-                  $ calbal install Aeson
+                  $ cabal install Aeson
