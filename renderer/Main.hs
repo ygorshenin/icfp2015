@@ -14,9 +14,12 @@ import CommandLine
 
 data RendererState = RendererState { rsQuit  :: Bool
                                    , rsInput :: Input
+                                   , rsUnit  :: Int
+                                   , rsUnitOffset :: Cell
                                    }
                    deriving (Show, Eq)
 
+unitColor   = (0, 255, 0)
 filledColor = (238, 232, 170)
 
 setQuit :: RendererState -> RendererState
@@ -49,7 +52,12 @@ onKey :: IORef RendererState -> GLFW.KeyCallback
 onKey rendererState key state = do
   when (key == GLFW.SpecialKey GLFW.ESC && state == GLFW.Press) $ do
       modifyIORef rendererState setQuit
-
+  when (key == GLFW.CharKey ' ' && state == GLFW.Press) $ do
+      rs <- readIORef rendererState
+      let unit = succ $ rsUnit rs
+          unitOffset = getUnitOffset (rsInput rs) unit
+      writeIORef rendererState $ rs { rsUnit = unit, rsUnitOffset = unitOffset }
+      putStrLn $ "Switching to unit: " ++ show unit
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
 
@@ -95,6 +103,7 @@ drawGrid rendererState = do
 
       ix = [(row, col) | row <- [0 .. numRows - 1], col <- [0 .. numCols - 1]]
 
+  -- Draws the Honeycomb.
   forM_ ix $ \coord -> do
     let cx = getCenterX coord
         cy = getCenterY coord
@@ -104,6 +113,7 @@ drawGrid rendererState = do
       color 1.0 1.0 1.0
       drawHexagon GL.LineLoop
 
+  -- Draws filled cells.
   forM_ (filled input) $ \(Cell col row) -> do
     let coord = (row, col)
         cx = getCenterX coord
@@ -113,6 +123,20 @@ drawGrid rendererState = do
       scale (dist / 2.0) (dist / 2.0)
       colorInt filledColor
       drawHexagon GL.Polygon
+
+  -- Draws the current unit.
+  let unit = units input !! (rsUnit rs)
+      unitOffset = rsUnitOffset rs
+  forM_ (map (cellAdd unitOffset) $ members unit) $ \(Cell col row) -> do
+    let coord = (row, col)
+        cx = getCenterX coord
+        cy = getCenterY coord
+    GL.preservingMatrix $ do
+      translate cx cy
+      scale (dist / 2.0) (dist / 2.0)
+      colorInt unitColor
+      drawHexagon GL.Polygon
+
   return ()
 
 display :: IORef RendererState -> IO ()
@@ -151,7 +175,9 @@ main = do
   when (ip == "") $ fail "Input is not specified."
 
   input <- readInput ip
-  rendererState <- newIORef $ RendererState False input
+  let unit = 0
+      unitOffset = getUnitOffset input unit
+  rendererState <- newIORef $ RendererState False input unit unitOffset
 
   GLFW.windowSizeCallback $= onResize
   GLFW.windowCloseCallback $= onClose rendererState
