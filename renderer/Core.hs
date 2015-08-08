@@ -11,7 +11,7 @@ import qualified Data.ByteString.Lazy as L
 import Control.Applicative
 import Control.Monad
 
-data Cell = Cell { celLX :: Int, cellY :: Int }
+data Cell = Cell { cellX :: Int, cellY :: Int }
           deriving (Show, Eq)
 
 data Unit = Unit { members :: [Cell]

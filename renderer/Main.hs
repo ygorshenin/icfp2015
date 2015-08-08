@@ -12,10 +12,12 @@ import qualified Graphics.UI.GLFW as GLFW
 import Core
 import CommandLine
 
-data RendererState = RendererState { rsQuit :: Bool
-                                   , input  :: Input
+data RendererState = RendererState { rsQuit  :: Bool
+                                   , rsInput :: Input
                                    }
                    deriving (Show, Eq)
+
+filledColor = (238, 232, 170)
 
 setQuit :: RendererState -> RendererState
 setQuit rs = rs { rsQuit = True }
@@ -51,6 +53,11 @@ onKey rendererState key state = do
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
 
+colorInt :: (Int, Int, Int) -> IO ()
+colorInt (r, g, b) = color (fromIntegral r / 255.0)
+                           (fromIntegral g / 255.0)
+                           (fromIntegral b / 255.0)
+
 color :: GLfloat -> GLfloat -> GLfloat -> IO ()
 color r g b = GL.color $ GL.Color3 r g b
 
@@ -63,40 +70,58 @@ translate x y = GL.translate $ GL.Vector3 x y 0
 scale :: GLfloat -> GLfloat -> IO ()
 scale sx sy = GL.scale sx sy 1.0
 
-drawHexagon :: IO ()
-drawHexagon = do
-  GL.renderPrimitive GL.LineLoop $ do
-                color 1.0 1.0 1.0
-                forM_ hexagon $ \(x, y) -> vertex x y
+drawHexagon :: GL.PrimitiveMode -> IO ()
+drawHexagon mode = do
+  GL.renderPrimitive mode $ do
+      forM_ hexagon $ \(x, y) -> vertex x y
+
+centersDist :: RendererState -> GLfloat
+centersDist rendererState = min dx (2.0 * dy / sqrt 3.0)
+    where numRows = height $ rsInput rendererState
+          numCols = width $ rsInput rendererState
+          dx = 2.0 / (fromIntegral numCols + 0.5) :: GLfloat
+          dy = 2.0 / (fromIntegral numRows) :: GLfloat
 
 drawGrid :: IORef RendererState -> IO ()
 drawGrid rendererState = do
   rs <- readIORef rendererState
-  let numRows = height $ input rs
-      numCols = width $ input rs
+  let input = rsInput rs
+      numRows = height input
+      numCols = width input
 
-      dx = 2.0 / (fromIntegral numCols + 0.5) :: GLfloat
-      dy = 2.0 / (fromIntegral numRows) :: GLfloat
-      dist = min dx (2.0 * dy / sqrt 3.0)
-      distX = dist
-      distY = dist * (sqrt 3.0) / 2.0
+      dist = centersDist rs
+      getCenterX (row, col) = -1.0 + dist * (fromIntegral col + if even row then 0.5 else 1.0)
+      getCenterY (row, _)   = 1.0 - 0.5 * dist * (1 + (sqrt 3.0) * (fromIntegral row))
+
       ix = [(row, col) | row <- [0 .. numRows - 1], col <- [0 .. numCols - 1]]
-  forM_ ix $ \(row, col) -> do
-    let cx = -1.0 + dist / 2.0 + distX * (fromIntegral col) + (if even row then 0 else distX / 2.0)
-        cy = 1.0 - dist / 2.0 - distY * (fromIntegral row)
+
+  forM_ ix $ \coord -> do
+    let cx = getCenterX coord
+        cy = getCenterY coord
     GL.preservingMatrix $ do
       translate cx cy
       scale (dist / 2.0) (dist / 2.0)
-      drawHexagon
+      color 1.0 1.0 1.0
+      drawHexagon GL.LineLoop
+
+  forM_ (filled input) $ \(Cell col row) -> do
+    let coord = (row, col)
+        cx = getCenterX coord
+        cy = getCenterY coord
+    GL.preservingMatrix $ do
+      translate cx cy
+      scale (dist / 2.0) (dist / 2.0)
+      colorInt filledColor
+      drawHexagon GL.Polygon
   return ()
 
 display :: IORef RendererState -> IO ()
-display rs = do
+display rendererState = do
   GL.clearColor $= GL.Color4 0 0 0 1.0
   GL.clear [GL.ColorBuffer]
 
   GL.loadIdentity
-  drawGrid rs
+  drawGrid rendererState
 
 rendererLoop :: IORef RendererState -> IO ()
 rendererLoop rendererState = do
