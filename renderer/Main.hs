@@ -266,7 +266,7 @@ initState cl input outputs = do
   printf "Initializing state for problem id: %d, seed: %d\n" pid s
 
   timestamp <- GL.get GLFW.time
-  return $ RendererState { rsQuit      = False
+  let rs = RendererState { rsQuit      = False
                          , rsPause     = False
                          , rsCL        = cl
                          , rsState     = GameRunning
@@ -277,6 +277,9 @@ initState cl input outputs = do
                          , rsCommands  = solution output
                          , rsTimestamp = timestamp
                          }
+  if rsCheckLock rs
+  then return rs
+  else return rs { rsCommands = filter (/= LockCheck) (rsCommands rs) }
 
 nextState :: IORef RendererState -> IO ()
 nextState rendererState = do
