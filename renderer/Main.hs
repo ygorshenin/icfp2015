@@ -222,14 +222,14 @@ step rendererState = do
     else if isBlocked input filled unit'
     then do
       let filled' = removeFullRows input (filled ++ (members unit))
-      let commands' = if rsCheckLock rs
+          commands' = if rsCheckLock rs
                       then tail commands
                       else commands
       when (rsCheckLock rs && (head commands) /= LockCheck) $
          fail "Block is not locked."
       writeIORef rendererState $ rs { rsUnits = units
                                     , rsFilled = filled'
-                                    , rsCommands = commands
+                                    , rsCommands = commands'
                                     , rsTimestamp = ts
                                     }
       return BlockLocked
