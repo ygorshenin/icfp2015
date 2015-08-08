@@ -31,15 +31,22 @@ runOrDie action message = do
     putStrLn message
     exitFailure
 
-onKey :: IORef RendererState -> GLFW.KeyCallback
-onKey rendererState key state = do
-  when (key == GLFW.SpecialKey GLFW.ESC && state == GLFW.Press) $ do
-      modifyIORef rendererState setQuit
+onResize :: GLFW.WindowSizeCallback
+onResize size@(GL.Size width height) = do
+  GL.viewport $= (GL.Position 0 0, size)
+  GL.matrixMode $= GL.Projection
+  GL.loadIdentity
+  GL.ortho2D 0 (realToFrac width) (realToFrac height) 0
 
 onClose :: IORef RendererState -> GLFW.WindowCloseCallback
 onClose rendererState = do
   modifyIORef rendererState setQuit
   return True
+
+onKey :: IORef RendererState -> GLFW.KeyCallback
+onKey rendererState key state = do
+  when (key == GLFW.SpecialKey GLFW.ESC && state == GLFW.Press) $ do
+      modifyIORef rendererState setQuit
 
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
@@ -121,6 +128,7 @@ main = do
   input <- readInput ip
   rendererState <- newIORef $ RendererState False input
 
+  GLFW.windowSizeCallback $= onResize
   GLFW.windowCloseCallback $= onClose rendererState
   GLFW.keyCallback $= onKey rendererState
   rendererLoop rendererState
