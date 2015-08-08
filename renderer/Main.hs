@@ -12,10 +12,10 @@ import qualified Graphics.UI.GLFW as GLFW
 import Core
 import CommandLine
 
-data RendererState = RendererState { rsQuit  :: Bool
-                                   , rsInput :: Input
-                                   , rsUnit  :: Int
-                                   , rsUnitOffset :: Cell
+data RendererState = RendererState { rsQuit   :: Bool
+                                   , rsInput  :: Input
+                                   , rsUnitIx :: Int
+                                   , rsUnit   :: Unit
                                    }
                    deriving (Show, Eq)
 
@@ -54,10 +54,10 @@ onKey rendererState key state = do
       modifyIORef rendererState setQuit
   when (key == GLFW.CharKey ' ' && state == GLFW.Press) $ do
       rs <- readIORef rendererState
-      let unit = succ $ rsUnit rs
-          unitOffset = getUnitOffset (rsInput rs) unit
-      writeIORef rendererState $ rs { rsUnit = unit, rsUnitOffset = unitOffset }
-      putStrLn $ "Switching to unit: " ++ show unit
+      let unitIx = succ $ rsUnitIx rs
+          unit   = spawnUnit (rsInput rs) unitIx
+      writeIORef rendererState $ rs { rsUnitIx = unitIx, rsUnit = unit }
+      putStrLn $ "Switching to unit: " ++ show unitIx
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
 
@@ -125,9 +125,8 @@ drawGrid rendererState = do
       drawHexagon GL.Polygon
 
   -- Draws the current unit.
-  let unit = units input !! (rsUnit rs)
-      unitOffset = rsUnitOffset rs
-  forM_ (map (cellAdd unitOffset) $ members unit) $ \(Cell col row) -> do
+  let unit = rsUnit rs
+  forM_ (members unit) $ \(Cell col row) -> do
     let coord = (row, col)
         cx = getCenterX coord
         cy = getCenterY coord
@@ -175,9 +174,7 @@ main = do
   when (ip == "") $ fail "Input is not specified."
 
   input <- readInput ip
-  let unit = 0
-      unitOffset = getUnitOffset input unit
-  rendererState <- newIORef $ RendererState False input unit unitOffset
+  rendererState <- newIORef $ RendererState False input 0 (spawnUnit input 0)
 
   GLFW.windowSizeCallback $= onResize
   GLFW.windowCloseCallback $= onClose rendererState
