@@ -9,7 +9,8 @@ module Core ( Cell (..)
             , applyCommand
             , isBlocked
             , removeFullRows
-            , rotateUnit
+            , rotateUnitCW
+            , rotateUnitCCW
             ) where
 
 import Data.Aeson
@@ -67,19 +68,22 @@ cellToCube (Cell col row) = (x, y, z)
 cubeToCell :: (Int, Int, Int) -> Cell
 cubeToCell (x, y, z) = Cell (z + (x + ((x + 1) `mod` 2)) `div` 2) x
 
-rotateCube (x, y, z) = (-z, -x, -y)
+rotateCubeRight (x, y, z) = (-z, -x, -y)
+rotateCubeLeft (x, y, z) = (-y, -z, -x)
 
 cubeAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
 cubeSub (x1, y1, z1) (x2, y2, z2) = (x1 - x2, y1 - y2, z1 - z2)
 
-rotateCell :: Cell -> Cell -> Cell
-rotateCell pv cc = cubeToCell . cubeAdd pvc . rotateCube $ cubeSub ccc pvc
+rotateCellCCW pv cc = cubeToCell . cubeAdd pvc . rotateCubeRight $ cubeSub ccc pvc
+    where ccc = cellToCube cc
+          pvc = cellToCube pv
+rotateCellCW pv cc = cubeToCell . cubeAdd pvc . rotateCubeLeft $ cubeSub ccc pvc
     where ccc = cellToCube cc
           pvc = cellToCube pv
 
-
-rotateUnit :: Unit -> Unit
-rotateUnit (Unit ms pv) = Unit (map (rotateCell pv) ms) pv
+rotateUnitCCW, rotateUnitCW :: Unit -> Unit
+rotateUnitCCW (Unit ms pv) = Unit (map (rotateCellCCW pv) ms) pv
+rotateUnitCW (Unit ms pv) = Unit (map (rotateCellCW pv) ms) pv
 
 parseCommand :: Char -> Command
 parseCommand c | c `elem` moveW  = MoveW
@@ -129,7 +133,8 @@ applyCommand MoveSW (Unit ms pv) = Unit (map shift ms) (shift pv)
     where shift (Cell x y) = if even y
                              then (Cell (x - 1) (y + 1))
                              else (Cell x (y + 1))
-applyCommand cmd _ = error $ "Unsopported command:" ++ show cmd
+applyCommand RCW unit = rotateUnitCW unit
+applyCommand RCCW unit = rotateUnitCCW unit
 
 nextRand :: (Int, Int) -> (Int, Int)
 nextRand (_, x) = (fromIntegral $ (x' `quot` 2 ^ 16) `mod` 2 ^ 15, fromIntegral $ x')
