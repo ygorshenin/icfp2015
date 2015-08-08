@@ -12,15 +12,20 @@ import qualified Graphics.UI.GLFW as GLFW
 import Core
 import CommandLine
 
-data RendererState = RendererState { rsQuit   :: Bool
-                                   , rsInput  :: Input
-                                   , rsUnitIx :: Int
-                                   , rsUnit   :: Unit
+data RendererState = RendererState { rsQuit      :: Bool
+                                   , rsInput     :: Input
+                                   , rsOutput    :: [Output]
+                                   , rsUnits     :: [Unit]
+                                   , rsFilled    :: [Cell]
+                                   , rsCommands  :: [Command]
+                                   , rsTimestamp :: Double
                                    }
                    deriving (Show, Eq)
 
 unitColor   = (0, 255, 0)
 filledColor = (238, 232, 170)
+
+timeoutSec = 0.1
 
 setQuit :: RendererState -> RendererState
 setQuit rs = rs { rsQuit = True }
@@ -52,12 +57,7 @@ onKey :: IORef RendererState -> GLFW.KeyCallback
 onKey rendererState key state = do
   when (key == GLFW.SpecialKey GLFW.ESC && state == GLFW.Press) $ do
       modifyIORef rendererState setQuit
-  when (key == GLFW.CharKey ' ' && state == GLFW.Press) $ do
-      rs <- readIORef rendererState
-      let unitIx = succ $ rsUnitIx rs
-          unit   = spawnUnit (rsInput rs) unitIx
-      writeIORef rendererState $ rs { rsUnitIx = unitIx, rsUnit = unit }
-      putStrLn $ "Switching to unit: " ++ show unitIx
+
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
 
@@ -114,7 +114,7 @@ drawGrid rendererState = do
       drawHexagon GL.LineLoop
 
   -- Draws filled cells.
-  forM_ (filled input) $ \(Cell col row) -> do
+  forM_ (rsFilled rs) $ \(Cell col row) -> do
     let coord = (row, col)
         cx = getCenterX coord
         cy = getCenterY coord
@@ -125,7 +125,7 @@ drawGrid rendererState = do
       drawHexagon GL.Polygon
 
   -- Draws the current unit.
-  let unit = rsUnit rs
+  let unit = head $ rsUnits rs
   forM_ (members unit) $ \(Cell col row) -> do
     let coord = (row, col)
         cx = getCenterX coord
@@ -146,6 +146,30 @@ display rendererState = do
   GL.loadIdentity
   drawGrid rendererState
 
+step :: IORef RendererState -> IO ()
+step rendererState = do
+  rs <- readIORef rendererState
+  ts <- GL.get GLFW.time
+
+  let input = rsInput rs
+      filled = rsFilled rs
+      (unit:units) = rsUnits rs
+      (command:commands) = rsCommands rs
+
+      unit' = applyCommand command unit
+  if isBlocked input filled unit'
+  then do
+    writeIORef rendererState $ rs { rsUnits = units
+                                  , rsFilled = filled ++ (members unit)
+                                  , rsCommands = commands
+                                  , rsTimestamp = ts
+                                  }
+  else do
+    writeIORef rendererState $ rs { rsUnits = (unit':units)
+                                  , rsCommands = commands
+                                  , rsTimestamp = ts
+                                  }
+
 rendererLoop :: IORef RendererState -> IO ()
 rendererLoop rendererState = do
   let loop = do
@@ -153,6 +177,9 @@ rendererLoop rendererState = do
         display rendererState
         GLFW.swapBuffers
         rs <- readIORef rendererState
+        ts <- GL.get GLFW.time
+
+        when (ts >= rsTimestamp rs + timeoutSec) $ step rendererState
         when (not $ rsQuit rs) $ loop
   loop
 
@@ -171,10 +198,21 @@ main = do
 
   commandLine <- parseCommandLine
   let ip = inputPath commandLine
-  when (ip == "") $ fail "Input is not specified."
+      op = outputPath commandLine
+  when (ip == "") $ fail "Input is not specified (-i option)."
+  when (op == "") $ fail "Output is not specified (-o option)."
 
-  input <- readInput ip
-  rendererState <- newIORef $ RendererState False input 0 (spawnUnit input 0)
+  input <- readJSON ip :: IO Input
+  output <- readJSON op :: IO [Output]
+  timestamp <- GL.get GLFW.time
+  rendererState <- newIORef $ RendererState { rsQuit   = False
+                                            , rsInput  = input
+                                            , rsOutput = output
+                                            , rsUnits  = genUnits input (head $ sourceSeeds input)
+                                            , rsFilled = filled input
+                                            , rsCommands = solution (head output)
+                                            , rsTimestamp = timestamp
+                                            }
 
   GLFW.windowSizeCallback $= onResize
   GLFW.windowCloseCallback $= onClose rendererState
