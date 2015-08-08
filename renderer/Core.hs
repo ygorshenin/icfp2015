@@ -8,6 +8,7 @@ module Core ( Cell (..)
             , genUnits
             , applyCommand
             , isBlocked
+            , removeFullRows
             ) where
 
 import Data.Aeson
@@ -52,6 +53,9 @@ data Command = MoveW
              | RCCW
                deriving (Show, Eq)
 
+cellAdd :: Cell -> Cell -> Cell
+cellAdd (Cell x1 y1) (Cell x2 y2) = Cell (x1 + x2) (y1 + y2)
+
 parseCommand :: Char -> Command
 parseCommand c | c `elem` moveW  = MoveW
                | c `elem` moveE  = MoveE
@@ -82,7 +86,6 @@ getUnitOffset input (Unit ms _) = Cell { cellX = x, cellY = y }
 shiftUnit :: Unit -> Cell -> Unit
 shiftUnit (Unit ms pv) c = Unit (map shift ms) (shift pv)
     where shift = cellAdd c
-          cellAdd (Cell x1 y1) (Cell x2 y2) = Cell (x1 + x2) (y1 + y2)
 
 -- Spawns unit on an initial position.
 spawnUnit :: Input -> Unit -> Unit
@@ -119,6 +122,7 @@ genUnits input seed = map (\ix -> spawnUnit input $ us !! (ix `mod` ns)) $ genRa
           ns = length us
 
 -- Returns true when unit is in a blocked state.
+isBlocked :: Input -> [Cell] -> Unit -> Bool
 isBlocked input filled unit = inFilled || outOfBorder
     where w = width input
           h = height input
@@ -127,6 +131,14 @@ isBlocked input filled unit = inFilled || outOfBorder
           outOfBorder = any invalidCell ms
 
           invalidCell (Cell x y) = x < 0 || x >= w || y < 0 || y >= h
+
+removeFullRows :: Input -> [Cell] -> [Cell]
+removeFullRows input cells = concat . fst $ foldl update ([], 0) rows
+    where rows = groupBy ((==) `on` cellY) . reverse $ sortBy (compare `on` cellY) cells
+
+          update :: ([[Cell]], Int) -> [Cell] -> ([[Cell]], Int)
+          update (rows, offset) row | length row == width input = (rows, offset + 1)
+                                    | otherwise = (map (cellAdd (Cell 0 offset)) row : rows, offset)
 
 instance FromJSON Cell where
     parseJSON (Object v) = Cell <$>
