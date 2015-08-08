@@ -30,9 +30,6 @@ timeoutSec = 0.1
 setQuit :: RendererState -> RendererState
 setQuit rs = rs { rsQuit = True }
 
-windowWidth = 800
-windowHeight = 600
-
 runOrDie :: IO Bool -> String -> IO ()
 runOrDie action message = do
   ok <- action
@@ -187,16 +184,16 @@ type CLI = State [String]
 
 main :: IO ()
 main = do
+  commandLine <- parseCommandLine
 
   runOrDie GLFW.initialize "GLFW: can't initialize"
   runOrDie (GLFW.openWindow
-            (GL.Size windowWidth windowHeight)
+            (GL.Size(fromIntegral $ windowWidth commandLine) (fromIntegral $ windowHeight commandLine))
             [GLFW.DisplayAlphaBits 8]
             GLFW.Window) $
        "GLFW: can't create window"
   GLFW.windowTitle $= "IFPC2015"
 
-  commandLine <- parseCommandLine
   let ip = inputPath commandLine
       op = outputPath commandLine
   when (ip == "") $ fail "Input is not specified (-i option)."
