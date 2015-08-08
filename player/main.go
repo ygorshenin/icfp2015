@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"../core"
 )
@@ -23,8 +24,9 @@ var (
 	filenames      strings
 	timeLimit      = flag.Int("t", 0, "Time limit, in seconds, to produce output")
 	memoryLimit    = flag.Int("m", 0, "Memory limit, in megabytes, to produce output")
-	processorCores = flag.Int("c", 0, "Number of processor cores available")
+	processorCores = flag.Int("c", runtime.NumCPU(), "Number of processor cores available")
 	phrases        strings
+	outfile        = flag.String("o", "", "Name of the file where output should be stored.")
 )
 
 func init() {
@@ -34,15 +36,28 @@ func init() {
 
 func main() {
 	flag.Parse()
+	runtime.GOMAXPROCS(*processorCores)
+	outputCh := make(chan []core.OutputEntry)
 	for _, filename := range filenames {
 		p, err := core.ReadProblem(filename)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(p.Id)
+		go core.PlayProblem(p, phrases, outputCh)
+	}
+	var output []core.OutputEntry
+	for range filenames {
+		o := <-outputCh
+		output = append(output, o...)
 	}
 
-	var o []core.OutputEntry
-	o = append(o, core.OutputEntry{Tag: "test", Solution: "aaaaa"})
-	core.WriteOutput(o, os.Stdout)
+	if *outfile != "" {
+		f, err := os.Create(*outfile)
+		if err != nil {
+			panic(err)
+		}
+		core.WriteOutput(output, f)
+	} else {
+		core.WriteOutput(output, os.Stdout)
+	}
 }

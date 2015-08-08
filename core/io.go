@@ -9,29 +9,29 @@ import (
 )
 
 type Problem struct {
-	id           int
-	units        []Unit
-	width        int
-	height       int
-	filled       []Cell
-	sourceLength int
-	sourceSeeds  []int
+	Id           int
+	Units        []Unit
+	Width        int
+	Height       int
+	Filled       []Cell
+	SourceLength int
+	SourceSeeds  []uint64
 }
 
 type Cell struct {
-	x, y int
+	X, Y int
 }
 
 type Unit struct {
-	cells []Cell `json:"members"`
-	pivot Cell
+	Cells []Cell `json:"members"`
+	Pivot Cell
 }
 
 type OutputEntry struct {
-	ProblemId int    
-	Seed      uint64    
-	Tag       string 
-	Solution  string 
+	ProblemId int
+	Seed      uint64
+	Tag       string
+	Solution  string
 }
 type Output []OutputEntry
 
