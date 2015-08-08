@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
 	//if p.SourceLength != len(p.SourceSeeds) {
 	//	panic("bad sourceLength")
@@ -20,10 +22,13 @@ func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
 
 func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
 	b.PlayGreedilyNoRotations()
+	phrasesScore := PowerScores(b.gameLog, b.phrases)
+	tag := fmt.Sprintf("Total score: %d (%d moves + %d phrases).",
+		b.movesScore+phrasesScore, b.movesScore, phrasesScore)
 	outputCh <- OutputEntry{
 		ProblemId: -1,
 		Seed:      b.rng.seed,
-		Tag:       "",
+		Tag:       tag,
 		Solution:  b.gameLog,
 	}
 }
@@ -50,6 +55,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 		child[dir] = b.CellPtrSlice()
 	}
 
+	cnt := 0
 	for {
 		for x := 0; x < b.width; x++ {
 			for y := 0; y < b.height; y++ {
@@ -74,15 +80,16 @@ func (b *Board) PlayGreedilyNoRotations() {
 		b.RemoveActiveUnit()
 
 		topLeft := b.activeUnit.TopLeftCell()
-		was[topLeft.X][topLeft.Y] = true
+		sx, sy := topLeft.X, topLeft.Y
+		was[sx][sy] = true
 		var qx, qy []int
 		qt := 0
-		qx = append(qx, topLeft.X)
-		qy = append(qy, topLeft.Y)
+		qx = append(qx, sx)
+		qy = append(qy, sy)
 		for qt < len(qx) {
 			x, y := qx[qt], qy[qt]
-			b.activeUnit.Shift(x, y)
 			qt++
+			b.activeUnit.Shift(x-sx, y-sy)
 			for dir := 0; dir < 4; dir++ {
 				newActiveUnit := b.activeUnit.Move(Direction(dir))
 				if !b.CanPlace(newActiveUnit) {
@@ -99,59 +106,65 @@ func (b *Board) PlayGreedilyNoRotations() {
 				qy = append(qy, ny)
 				child[dir][x][y] = &Cell{X: nx, Y: ny}
 				prev[nx][ny] = &Cell{X: x, Y: y}
+
 			}
-			b.activeUnit.Shift(-x, -y)
+			b.activeUnit.Shift(-x+sx, -y+sy)
 		}
 
-		bestX, bestY, bestScore := -1, -1, -1
-		for x := 0; x < b.width; x++ {
+		bestX, bestY, bestScore, anyMove := 0, 0, 0, false
+		states := 0
+		for qi := range qx {
+			x, y := qx[qi], qy[qi]
+			if freezeDir[x][y] < 0 {
+				continue
+			}
+			states++
+			b.activeUnit.Shift(x-sx, y-sy)
+			b.AddActiveUnit()
+			score := 0
+			occupiedRows := 0
 			for y := 0; y < b.height; y++ {
-				if freezeDir[x][y] < 0 {
-					continue
-				}
-				b.activeUnit.Shift(x, y)
-				b.AddActiveUnit()
-				score := 0
-				for _, c := range b.activeUnit.Cells {
-					full := true
-					for x := 0; x < b.width; x++ {
-						if !b.occupied[x][c.Y] {
-							full = false
-							break
-						}
-					}
-					if full {
-						score++
+				occupiedInRow := 0
+				for x := 0; x < b.width; x++ {
+					if b.occupied[x][y] {
+						occupiedInRow++
 					}
 				}
-				score += y // the lower the better
-				b.RemoveActiveUnit()
-				b.activeUnit.Shift(-x, -y)
-				if bestScore < score {
-					bestX, bestY, bestScore = x, y, score
+				if occupiedInRow == b.width {
+					score += 1000
 				}
+				if occupiedInRow > 0 {
+					occupiedRows++
+				}
+			}
+			score += y // the lower the better
+			score -= occupiedRows
+			b.RemoveActiveUnit()
+			b.activeUnit.Shift(-x+sx, -y+sy)
+			if !anyMove || bestScore < score {
+				bestX, bestY, bestScore, anyMove = x, y, score, true
 			}
 		}
 
-		if bestX < 0 {
+		fmt.Println(bestScore, bestX, bestY, b.width, b.height)
+
+		if !anyMove {
 			panic("greedy: cannot move")
 		}
 
 		b.AddActiveUnit()
 
 		var pathX, pathY []int
-		pathX = append(pathX, bestX)
-		pathY = append(pathY, bestY)
 		for x, y := bestX, bestY; ; {
+			pathX = append(pathX, x)
+			pathY = append(pathY, y)
 			p := prev[x][y]
 			if p == nil {
 				break
 			}
-			pathX = append(pathX, p.X)
-			pathY = append(pathY, p.Y)
 			x, y = p.X, p.Y
 		}
-
+		fmt.Println(pathX, pathY)
 		for i := len(pathX) - 1; i >= 0; i-- {
 			x, y := pathX[i], pathY[i]
 			var dir int
@@ -161,12 +174,23 @@ func (b *Board) PlayGreedilyNoRotations() {
 				for dir = 0; dir < 4; dir++ {
 					ch := child[dir][x][y]
 					if ch != nil && ch.X == pathX[i-1] && ch.Y == pathY[i-1] {
+						z := prev[pathX[i-1]][pathY[i-1]]
+						if z.X != x || z.Y != y {
+							panic("@")
+						}
 						break
 					}
 				}
 			}
+			if dir == 4 {
+				panic("rotations are not allowed in this solution!")
+			}
 			cmd := Command{dir: Direction(dir), letter: directionLetters[dir][0]}
 			b.MoveActiveUnit(cmd)
+		}
+		cnt++
+		if cnt == 1 {
+			break
 		}
 	}
 }

@@ -117,9 +117,17 @@ func (c *Cell) Move(dir Direction) Cell {
 	case DirW:
 		return Cell{X: c.X - 1, Y: c.Y}
 	case DirSE:
-		return Cell{X: c.X + 1, Y: c.Y + 1}
+		x := c.X
+		if c.Y%2 == 1 {
+			x++
+		}
+		return Cell{X: x, Y: c.Y + 1}
 	case DirSW:
-		return Cell{X: c.X - 1, Y: c.Y + 1}
+		x := c.X
+		if c.Y%2 == 0 {
+			x--
+		}
+		return Cell{X: x, Y: c.Y + 1}
 	}
 	panic("move cell: bad direction")
 }
@@ -164,9 +172,9 @@ func (u *Unit) TopLeftCell() Cell {
 }
 
 func (u *Unit) Shift(x, y int) {
-	for _, c := range u.Cells {
-		c.X += x
-		c.Y += y
+	for i := range u.Cells {
+		u.Cells[i].X += x
+		u.Cells[i].Y += y
 	}
 	u.Pivot.X += x
 	u.Pivot.Y += y
@@ -342,15 +350,16 @@ func (b *Board) MoveActiveUnit(c Command) error {
 			b.AddActiveUnit()
 			return PositionRepeated
 		}
+		b.gameLog += string(c.letter)
 		b.cache.Add(b)
 	} else {
 		// frozen
 		b.AddActiveUnit()
 		b.RemoveFullLines()
 		b.activeUnit = nil
+		b.gameLog += string(c.letter)
+		b.gameLog += string('\n')
 	}
-
-	b.gameLog += string(c.letter)
 
 	if b.IsEmpty() {
 		return GameOver

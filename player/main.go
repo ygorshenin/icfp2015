@@ -52,11 +52,7 @@ func main() {
 	}
 
 	if *outfile != "" {
-		f, err := os.Create(*outfile)
-		if err != nil {
-			panic(err)
-		}
-		core.WriteOutput(output, f)
+		core.WriteOutputToFile(output, *outfile)
 	} else {
 		core.WriteOutput(output, os.Stdout)
 	}

@@ -60,7 +60,6 @@ func WriteOutput(o Output, w io.Writer) error {
 	_, err = w.Write(b)
 	if err != nil {
 		return errors.New("writing output: " + err.Error())
-
 	}
 	return nil
 }
