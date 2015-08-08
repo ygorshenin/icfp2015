@@ -4,6 +4,7 @@ import Control.Monad
 import Control.Monad.State
 import Data.IORef
 import Graphics.Rendering.OpenGL (($=), GLfloat)
+import Text.Printf (printf)
 import System.Environment
 import System.Exit
 import qualified Graphics.Rendering.OpenGL as GL
@@ -12,9 +13,21 @@ import qualified Graphics.UI.GLFW as GLFW
 import Core
 import CommandLine
 
+data GamesState = GameRunning
+               | GameCompleted
+               | GamesCompleted
+                 deriving (Show, Eq)
+
+data Step = BlockMoved Command
+          | BlockLocked
+          | CommandsCompleted
+          | InvalidBlock
+            deriving (Show, Eq)
+
 data RendererState = RendererState { rsQuit      :: Bool
+                                   , rsState     :: GamesState
                                    , rsInput     :: Input
-                                   , rsOutput    :: [Output]
+                                   , rsOutputs   :: [Output]
                                    , rsUnits     :: [Unit]
                                    , rsFilled    :: [Cell]
                                    , rsCommands  :: [Command]
@@ -22,10 +35,24 @@ data RendererState = RendererState { rsQuit      :: Bool
                                    }
                    deriving (Show, Eq)
 
-unitColor   = (0, 255, 0)
-filledColor = (238, 232, 170)
+setGamesState :: GamesState -> RendererState -> RendererState
+setGamesState state gs = gs { rsState = state }
 
-timeoutSec = 0.1
+onStepCompleted :: Step -> IORef RendererState -> IO ()
+onStepCompleted CommandsCompleted rs = do
+  putStrLn "Commands completed."
+  modifyIORef rs (setGamesState GameCompleted)
+onStepCompleted InvalidBlock rs = do
+  putStrLn "Current unit is in invalid state."
+  modifyIORef rs (setGamesState GameCompleted)
+onStepCompleted _ _ = return ()
+
+borderColor = (255, 255, 255)
+circleColor = (85, 107, 47)
+filledColor = (238, 232, 170)
+unitColor   = (154, 205, 50)
+
+timeoutSec = 0.2
 
 setQuit :: RendererState -> RendererState
 setQuit rs = rs { rsQuit = True }
@@ -57,10 +84,18 @@ onKey rendererState key state = do
       modifyIORef rendererState setQuit
   when (key == GLFW.CharKey ' ' && state == GLFW.Press) $ do
       result <- macroStep rendererState
-      print result
+      onStepCompleted result rendererState
+      return ()
+  when (key == GLFW.SpecialKey GLFW.ENTER && state == GLFW.Press) $ do
+      nextState rendererState
+      return ()
 
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
+
+circle :: GLfloat -> [(GLfloat, GLfloat)]
+circle radius = [(radius * (cos angle), radius * (sin angle)) | i <- [1 .. n], let angle = 2.0 * pi / n * i]
+    where n = 16
 
 colorInt :: (Int, Int, Int) -> IO ()
 colorInt (r, g, b) = color (fromIntegral r / 255.0)
@@ -99,44 +134,33 @@ drawGrid rendererState = do
       numCols = width input
 
       dist = centersDist rs
-      getCenterX (row, col) = -1.0 + dist * (fromIntegral col + if even row then 0.5 else 1.0)
-      getCenterY (row, _)   = 1.0 - 0.5 * dist * (1 + (sqrt 3.0) * (fromIntegral row))
+      getCenterX (Cell col row) = -1.0 + dist * (fromIntegral col + if even row then 0.5 else 1.0)
+      getCenterY (Cell _ row)   = 1.0 - 0.5 * dist * (1 + (sqrt 3.0) * (fromIntegral row))
 
-      ix = [(row, col) | row <- [0 .. numRows - 1], col <- [0 .. numCols - 1]]
+      ix = [Cell col row | row <- [0 .. numRows - 1], col <- [0 .. numCols - 1]]
+
+      drawPointsInCell mode color points cell = do
+          let cx = getCenterX cell
+              cy = getCenterY cell
+          GL.preservingMatrix $ do
+              translate cx cy
+              scale (dist * 0.5) (dist * 0.5)
+              colorInt color
+              GL.renderPrimitive mode $ do
+                  forM_ points $ \(x, y) -> vertex x y
 
   -- Draws the Honeycomb.
-  forM_ ix $ \coord -> do
-    let cx = getCenterX coord
-        cy = getCenterY coord
-    GL.preservingMatrix $ do
-      translate cx cy
-      scale (dist / 2.0) (dist / 2.0)
-      color 1.0 1.0 1.0
-      drawHexagon GL.LineLoop
+  forM_ ix $ drawPointsInCell GL.LineLoop borderColor hexagon
 
   -- Draws filled cells.
-  forM_ (rsFilled rs) $ \(Cell col row) -> do
-    let coord = (row, col)
-        cx = getCenterX coord
-        cy = getCenterY coord
-    GL.preservingMatrix $ do
-      translate cx cy
-      scale (dist / 2.0) (dist / 2.0)
-      colorInt filledColor
-      drawHexagon GL.Polygon
+  forM_ (rsFilled rs) $ drawPointsInCell GL.Polygon filledColor hexagon
 
-  -- Draws the current unit.
-  let unit = head $ rsUnits rs
-  forM_ (members unit) $ \(Cell col row) -> do
-    let coord = (row, col)
-        cx = getCenterX coord
-        cy = getCenterY coord
-    GL.preservingMatrix $ do
-      translate cx cy
-      scale (dist / 2.0) (dist / 2.0)
-      colorInt unitColor
-      drawHexagon GL.Polygon
-
+  -- Draws the current unit if it doesn't intersect with filled cells.
+  let unit   = head $ rsUnits rs
+      filled = rsFilled rs
+  when (not $ isBlocked input filled unit) $ do
+      forM_ (members unit) $ drawPointsInCell GL.Polygon unitColor hexagon
+      drawPointsInCell GL.Polygon circleColor (circle 0.2) (pivot unit)
   return ()
 
 display :: IORef RendererState -> IO ()
@@ -146,11 +170,6 @@ display rendererState = do
 
   GL.loadIdentity
   drawGrid rendererState
-
-data Step = BlockMoved Command
-          | BlockLocked
-          | GameOver
-            deriving (Show, Eq)
 
 macroStep :: IORef RendererState -> IO Step
 macroStep rendererState = do
@@ -165,7 +184,7 @@ step rendererState = do
   ts <- GL.get GLFW.time
 
   if null $ rsCommands rs
-  then return GameOver
+  then return CommandsCompleted
   else do
     let input = rsInput rs
         filled = rsFilled rs
@@ -173,8 +192,9 @@ step rendererState = do
         (command:commands) = rsCommands rs
 
         unit' = applyCommand command unit
-    putStrLn $ show command
-    if isBlocked input filled unit'
+    if isBlocked input filled unit
+    then return InvalidBlock
+    else if isBlocked input filled unit'
     then do
       let filled' = removeFullRows input (filled ++ (members unit))
       writeIORef rendererState $ rs { rsUnits = units
@@ -199,13 +219,44 @@ rendererLoop rendererState = do
         rs <- readIORef rendererState
         ts <- GL.get GLFW.time
 
-        when (ts >= rsTimestamp rs + timeoutSec) $ do
-            status <- step rendererState
-            print status
+        when (ts >= rsTimestamp rs + timeoutSec && rsState rs == GameRunning) $ do
+            result <- step rendererState
+            onStepCompleted result rendererState
         when (not $ rsQuit rs) $ loop
   loop
 
-type CLI = State [String]
+initState :: Input -> [Output] -> IO RendererState
+initState input outputs = do
+  let output = head outputs
+      pid = problemId output
+      s   = seed output
+  when (pid /= (problemId output)) $ do
+      fail $ "Input id and output id mismatch: " ++ show pid ++ " vs. " ++ show (problemId output)
+
+  printf "Initializing state for problem id: %d, seed: %d\n" pid s
+
+  timestamp <- GL.get GLFW.time
+  return $ RendererState { rsQuit      = False
+                         , rsState     = GameRunning
+                         , rsInput     = input
+                         , rsOutputs   = outputs
+                         , rsUnits     = genUnits input s
+                         , rsFilled    = filled input
+                         , rsCommands  = solution output
+                         , rsTimestamp = timestamp
+                         }
+
+nextState :: IORef RendererState -> IO ()
+nextState rendererState = do
+  rs <- readIORef rendererState
+  let input   = rsInput rs
+      outputs = rsOutputs rs
+  if null (tail outputs)
+  then putStrLn "This is the last game."
+  else do
+    putStrLn "Switching to the next game."
+    rs' <- initState input (tail outputs)
+    writeIORef rendererState rs'
 
 main :: IO ()
 main = do
@@ -224,17 +275,11 @@ main = do
   when (ip == "") $ fail "Input is not specified (-i option)."
   when (op == "") $ fail "Output is not specified (-o option)."
 
-  input <- readJSON ip :: IO Input
+  input  <- readJSON ip :: IO Input
   output <- readJSON op :: IO [Output]
-  timestamp <- GL.get GLFW.time
-  rendererState <- newIORef $ RendererState { rsQuit   = False
-                                            , rsInput  = input
-                                            , rsOutput = output
-                                            , rsUnits  = genUnits input (head $ sourceSeeds input)
-                                            , rsFilled = filled input
-                                            , rsCommands = solution (head output)
-                                            , rsTimestamp = timestamp
-                                            }
+  rs     <- initState input output
+
+  rendererState <- newIORef rs
 
   GLFW.windowSizeCallback $= onResize
   GLFW.windowCloseCallback $= onClose rendererState
