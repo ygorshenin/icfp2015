@@ -9,6 +9,7 @@ module Core ( Cell (..)
             , applyCommand
             , isBlocked
             , removeFullRows
+            , rotateUnit
             ) where
 
 import Data.Aeson
@@ -53,8 +54,32 @@ data Command = MoveW
              | RCCW
                deriving (Show, Eq)
 
-cellAdd :: Cell -> Cell -> Cell
+cellAdd, cellSub :: Cell -> Cell -> Cell
 cellAdd (Cell x1 y1) (Cell x2 y2) = Cell (x1 + x2) (y1 + y2)
+cellSub (Cell x1 y1) (Cell x2 y2) = Cell (x1 - x2) (y1 - y2)
+
+cellToCube :: Cell -> (Int, Int, Int)
+cellToCube (Cell col row) = (x, y, z)
+    where x = row
+          z = col - (row + ((row + 1) `mod` 2)) `div` 2
+          y = -x - z
+
+cubeToCell :: (Int, Int, Int) -> Cell
+cubeToCell (x, y, z) = Cell (z + (x + ((x + 1) `mod` 2)) `div` 2) x
+
+rotateCube (x, y, z) = (-z, -x, -y)
+
+cubeAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
+cubeSub (x1, y1, z1) (x2, y2, z2) = (x1 - x2, y1 - y2, z1 - z2)
+
+rotateCell :: Cell -> Cell -> Cell
+rotateCell pv cc = cubeToCell . cubeAdd pvc . rotateCube $ cubeSub ccc pvc
+    where ccc = cellToCube cc
+          pvc = cellToCube pv
+
+
+rotateUnit :: Unit -> Unit
+rotateUnit (Unit ms pv) = Unit (map (rotateCell pv) ms) pv
 
 parseCommand :: Char -> Command
 parseCommand c | c `elem` moveW  = MoveW

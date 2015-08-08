@@ -22,9 +22,11 @@ data Step = BlockMoved Command
           | BlockLocked
           | CommandsCompleted
           | InvalidBlock
+          | GamePaused
             deriving (Show, Eq)
 
 data RendererState = RendererState { rsQuit      :: Bool
+                                   , rsPause     :: Bool
                                    , rsState     :: GamesState
                                    , rsInput     :: Input
                                    , rsOutputs   :: [Output]
@@ -89,6 +91,19 @@ onKey rendererState key state = do
   when (key == GLFW.SpecialKey GLFW.ENTER && state == GLFW.Press) $ do
       nextState rendererState
       return ()
+  when ((key == GLFW.CharKey 'p') || (key == GLFW.CharKey 'P') && state == GLFW.Press) $ do
+      rs <- readIORef rendererState
+      let paused = not $ rsPause rs
+      if paused
+      then putStrLn "Pause"
+      else putStrLn "Resuming the game"
+      writeIORef rendererState $ rs { rsPause = paused }
+  when ((key == GLFW.CharKey 'r') || (key == GLFW.CharKey 'R') && state == GLFW.Press) $ do
+      rs <- readIORef rendererState
+      let (unit:units) = rsUnits rs
+          unit' = rotateUnit unit
+      putStrLn "Rotating current unit"
+      writeIORef rendererState $ rs { rsUnits = (unit':units) }
 
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
@@ -185,6 +200,8 @@ step rendererState = do
 
   if null $ rsCommands rs
   then return CommandsCompleted
+  else if rsPause rs
+  then return GamePaused
   else do
     let input = rsInput rs
         filled = rsFilled rs
@@ -237,6 +254,7 @@ initState input outputs = do
 
   timestamp <- GL.get GLFW.time
   return $ RendererState { rsQuit      = False
+                         , rsPause     = False
                          , rsState     = GameRunning
                          , rsInput     = input
                          , rsOutputs   = outputs
