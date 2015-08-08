@@ -49,7 +49,7 @@ onStepCompleted InvalidBlock rs = do
   modifyIORef rs (setGamesState GameCompleted)
 onStepCompleted _ _ = return ()
 
-borderColor = (255, 255, 255)
+borderColor = (105, 105, 105)
 circleColor = (85, 107, 47)
 filledColor = (238, 232, 170)
 unitColor   = (154, 205, 50)
@@ -98,11 +98,17 @@ onKey rendererState key state = do
       then putStrLn "Pause"
       else putStrLn "Resuming the game"
       writeIORef rendererState $ rs { rsPause = paused }
-  when ((key == GLFW.CharKey 'r') || (key == GLFW.CharKey 'R') && state == GLFW.Press) $ do
+  when (key == GLFW.SpecialKey GLFW.UP && state == GLFW.Press) $ do
       rs <- readIORef rendererState
       let (unit:units) = rsUnits rs
-          unit' = rotateUnit unit
-      putStrLn "Rotating current unit"
+          unit' = rotateUnitCCW unit
+      putStrLn "Rotating current unit counter-clockwise"
+      writeIORef rendererState $ rs { rsUnits = (unit':units) }
+  when (key == GLFW.SpecialKey GLFW.DOWN && state == GLFW.Press) $ do
+      rs <- readIORef rendererState
+      let (unit:units) = rsUnits rs
+          unit' = rotateUnitCW unit
+      putStrLn "Rotating current unit clockwise"
       writeIORef rendererState $ rs { rsUnits = (unit':units) }
 
 hexagon :: [(GLfloat, GLfloat)]
