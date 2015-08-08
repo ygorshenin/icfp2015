@@ -27,6 +27,7 @@ data Step = BlockMoved Command
 
 data RendererState = RendererState { rsQuit      :: Bool
                                    , rsPause     :: Bool
+                                   , rsCL        :: CommandLine
                                    , rsState     :: GamesState
                                    , rsInput     :: Input
                                    , rsOutputs   :: [Output]
@@ -36,6 +37,9 @@ data RendererState = RendererState { rsQuit      :: Bool
                                    , rsTimestamp :: Double
                                    }
                    deriving (Show, Eq)
+
+rsCheckLock :: RendererState -> Bool
+rsCheckLock = not . noCheckLock . rsCL
 
 setGamesState :: GamesState -> RendererState -> RendererState
 setGamesState state gs = gs { rsState = state }
@@ -210,11 +214,19 @@ step rendererState = do
         (command:commands) = rsCommands rs
 
         unit' = applyCommand command unit
-    if isBlocked input filled unit
+    if command == LockCheck
+    then do
+      fail "Block is not locked."
+    else if isBlocked input filled unit
     then return InvalidBlock
     else if isBlocked input filled unit'
     then do
       let filled' = removeFullRows input (filled ++ (members unit))
+      let commands' = if rsCheckLock rs
+                      then tail commands
+                      else commands
+      when (rsCheckLock rs && (head commands) /= LockCheck) $
+         fail "Block is not locked."
       writeIORef rendererState $ rs { rsUnits = units
                                     , rsFilled = filled'
                                     , rsCommands = commands
@@ -243,8 +255,8 @@ rendererLoop rendererState = do
         when (not $ rsQuit rs) $ loop
   loop
 
-initState :: Input -> [Output] -> IO RendererState
-initState input outputs = do
+initState :: CommandLine -> Input -> [Output] -> IO RendererState
+initState cl input outputs = do
   let output = head outputs
       pid = problemId output
       s   = seed output
@@ -256,6 +268,7 @@ initState input outputs = do
   timestamp <- GL.get GLFW.time
   return $ RendererState { rsQuit      = False
                          , rsPause     = False
+                         , rsCL        = cl
                          , rsState     = GameRunning
                          , rsInput     = input
                          , rsOutputs   = outputs
@@ -274,7 +287,7 @@ nextState rendererState = do
   then putStrLn "This is the last game."
   else do
     putStrLn "Switching to the next game."
-    rs' <- initState input (tail outputs)
+    rs' <- initState (rsCL rs) input (tail outputs)
     writeIORef rendererState rs'
 
 main :: IO ()
@@ -296,7 +309,7 @@ main = do
 
   input  <- readJSON ip :: IO Input
   output <- readJSON op :: IO [Output]
-  rs     <- initState input output
+  rs     <- initState commandLine input output
 
   rendererState <- newIORef rs
 

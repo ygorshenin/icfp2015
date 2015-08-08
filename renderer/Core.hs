@@ -54,6 +54,7 @@ data Command = MoveW
              | MoveSW
              | MoveSE
              | Rotate Rotation
+             | LockCheck
                deriving (Show, Eq)
 
 cellAdd, cellSub :: Cell -> Cell -> Cell
@@ -89,6 +90,7 @@ parseCommand c | c `elem` moveW  = MoveW
                | c `elem` moveSE = MoveSE
                | c `elem` rcw    = Rotate CW
                | c `elem` rccw   = Rotate CCW
+               | c == '\n'       = LockCheck
                | otherwise       = error $ "Unknown command:" ++ show c
     where moveW  = "p'!.03"
           moveE  = "bcefy2"
