@@ -11,10 +11,10 @@ type BoardCache struct {
 
 func (bc *BoardCache) ComputeHash(b *Board) uint64 {
 	var h uint64
-	for r := 0; r < b.height; r++ {
-		for c := 0; c < b.width; c++ {
+	for x := 0; x < b.width; x++ {
+		for y := 0; y < b.height; y++ {
 			h = h * 1000000007
-			if b.occupied[r][c] {
+			if b.occupied[x][y] {
 				h++
 			}
 		}
@@ -30,6 +30,11 @@ func (bc *BoardCache) Add(b *Board) {
 // Assuming no collisions.
 func (bc *BoardCache) Seen(b *Board) bool {
 	h := bc.ComputeHash(b)
+	if h == 0 {	
+		// Empty board results in Game Over and does
+		// not violate the rules.
+		return false
+	}
 	_, ok := bc.seen[h]
 	return ok
 }

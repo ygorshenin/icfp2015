@@ -36,6 +36,7 @@ type Board struct {
 	movesScore     int
 	cache          *BoardCache
 	problemId      int
+	lsOld          int // number of lines cleared by the last unit
 }
 
 type Command struct {
@@ -62,6 +63,7 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 		phrases:        phrases,
 		movesScore:     0,
 		cache:          NewBoardCache(),
+		lsOld:          0,
 	}
 }
 
@@ -78,12 +80,34 @@ func (b *Board) HasUnit(u *Unit) bool {
 	return true
 }
 
+// http://www.redblobgames.com/grids/hexagons/#rotation
 func (c *Cell) Rotate(pivot Cell, dir Direction) Cell {
-	r := Cell{X: c.X - pivot.X, Y: c.Y - pivot.Y}
-	// TODO
-	r.X += pivot.X
-	r.Y += pivot.Y
-	return r
+	cubeToOddRowOffset := func(x, y, z int) (col, row int) {
+		col = x + (z-(z&1))/2
+		row = z
+		return
+	}
+	oddRowOffsetToCube := func(col, row int) (x, y, z int) {
+		x = col - (row-(row&1))/2
+		z = row
+		y = -x - z
+		return
+	}
+
+	x, y, z := oddRowOffsetToCube(c.X, c.Y)
+	px, py, pz := oddRowOffsetToCube(pivot.X, pivot.Y)
+	x, y, z = x-px, y-py, z-pz
+	switch dir {
+	case DirCW:
+		x, y, z = -z, -x, -y
+	case DirCCW:
+		x, y, z = -y, -z, -x
+	default:
+		panic("rotate: bad direction")
+	}
+	x, y, z = x+px, y+py, z+pz
+	X, Y := cubeToOddRowOffset(x, y, z)
+	return Cell{X: X, Y: Y}
 }
 
 func (c *Cell) Move(dir Direction) Cell {
@@ -126,6 +150,26 @@ func (u *Unit) Move(dir Direction) *Unit {
 		Cells: cells,
 		Pivot: u.Pivot.Move(dir),
 	}
+}
+
+// As good as any.
+func (u *Unit) TopLeftCell() Cell {
+	r := u.Cells[0]
+	for _, c := range u.Cells {
+		if r.Y > c.Y || r.Y == c.Y && r.X > c.X {
+			r = c
+		}
+	}
+	return r
+}
+
+func (u *Unit) Shift(x, y int) {
+	for _, c := range u.Cells {
+		c.X += x
+		c.Y += y
+	}
+	u.Pivot.X += x
+	u.Pivot.Y += y
 }
 
 func (c *Cell) String() string {
@@ -199,6 +243,30 @@ func (b *Board) Spawn() error {
 	return nil
 }
 
+func (b *Board) BoolSlice() [][]bool {
+	r := make([][]bool, b.width)
+	for x := 0; x < b.width; x++ {
+		r[x] = make([]bool, b.height)
+	}
+	return r
+}
+
+func (b *Board) IntSlice() [][]int {
+	r := make([][]int, b.width)
+	for x := 0; x < b.width; x++ {
+		r[x] = make([]int, b.height)
+	}
+	return r
+}
+
+func (b *Board) CellPtrSlice() [][]*Cell {
+	r := make([][]*Cell, b.width)
+	for x := 0; x < b.width; x++ {
+		r[x] = make([]*Cell, b.height)
+	}
+	return r
+}
+
 func (b *Board) RemoveActiveUnit() error {
 	if b.activeUnit == nil {
 		return errors.New("remove active: unit is nil")
@@ -243,13 +311,23 @@ func (b *Board) CanPlace(u *Unit) bool {
 	return true
 }
 
+func (b *Board) IsEmpty() bool {
+	for x := 0; x < b.width; x++ {
+		for y := 0; y < b.height; y++ {
+			if b.occupied[x][y] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (b *Board) MoveActiveUnit(c Command) error {
 	if b.activeUnit == nil {
 		if err := b.Spawn(); err != nil {
 			return err
 		}
 	}
-
 	if err := b.RemoveActiveUnit(); err != nil {
 		return err
 	}
@@ -268,14 +346,50 @@ func (b *Board) MoveActiveUnit(c Command) error {
 	} else {
 		// frozen
 		b.AddActiveUnit()
+		b.RemoveFullLines()
 		b.activeUnit = nil
 	}
 
 	b.gameLog += string(c.letter)
-	b.RemoveFullLines()
+
+	if b.IsEmpty() {
+		return GameOver
+	}
 	return nil
 }
 
-// TODO do not forget to update cache and movesScore here
+// TODO Should we update cache here?
+// What if a previously visited state is visited after
+// some of the rows disappear?
+// For now, consider this scenario unlikely and ignore it.
 func (b *Board) RemoveFullLines() {
+	ls := 0
+	for y := b.height - 1; y >= 0; y-- {
+		full := true
+		for x := 0; x < b.width; x++ {
+			if !b.occupied[x][y] {
+				full = false
+				break
+			}
+		}
+		if !full {
+			continue
+		}
+		ls++
+		for ny := y; ny >= 0; ny-- {
+			for x := 0; x < b.width; x++ {
+				if ny == 0 {
+					b.occupied[x][ny] = false
+				} else {
+					b.occupied[x][ny] = b.occupied[x][ny-1]
+				}
+			}
+		}
+	}
+	points := len(b.activeUnit.Cells) + 100*ls*(ls+1)/2
+	if b.lsOld > 1 {
+		points += (b.lsOld - 1) * points / 10
+	}
+	b.movesScore += points
+	b.lsOld = ls
 }
