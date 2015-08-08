@@ -4,13 +4,13 @@ module Core ( Cell (..)
             , Input (..)
             , Output (..)
             , Command (..)
+            , Rotation (..)
             , readJSON
             , genUnits
             , applyCommand
             , isBlocked
             , removeFullRows
-            , rotateUnitCW
-            , rotateUnitCCW
+            , rotateUnit
             ) where
 
 import Data.Aeson
@@ -47,12 +47,13 @@ data Output = Output { problemId :: Int
                      , solution :: [Command]
                      } deriving (Show, Eq)
 
+data Rotation = CW | CCW deriving (Show, Eq)
+
 data Command = MoveW
              | MoveE
              | MoveSW
              | MoveSE
-             | RCW
-             | RCCW
+             | Rotate Rotation
                deriving (Show, Eq)
 
 cellAdd, cellSub :: Cell -> Cell -> Cell
@@ -68,30 +69,26 @@ cellToCube (Cell col row) = (x, y, z)
 cubeToCell :: (Int, Int, Int) -> Cell
 cubeToCell (x, y, z) = Cell (z + (x + ((x + 1) `mod` 2)) `div` 2) x
 
-rotateCubeRight (x, y, z) = (-z, -x, -y)
-rotateCubeLeft (x, y, z) = (-y, -z, -x)
+rotateCube CCW (x, y, z) = (-z, -x, -y)
+rotateCube CW (x, y, z)  = (-y, -z, -x)
 
 cubeAdd (x1, y1, z1) (x2, y2, z2) = (x1 + x2, y1 + y2, z1 + z2)
 cubeSub (x1, y1, z1) (x2, y2, z2) = (x1 - x2, y1 - y2, z1 - z2)
 
-rotateCellCCW pv cc = cubeToCell . cubeAdd pvc . rotateCubeRight $ cubeSub ccc pvc
-    where ccc = cellToCube cc
-          pvc = cellToCube pv
-rotateCellCW pv cc = cubeToCell . cubeAdd pvc . rotateCubeLeft $ cubeSub ccc pvc
+rotateCell rot pv cc = cubeToCell . cubeAdd pvc . rotateCube rot $ cubeSub ccc pvc
     where ccc = cellToCube cc
           pvc = cellToCube pv
 
-rotateUnitCCW, rotateUnitCW :: Unit -> Unit
-rotateUnitCCW (Unit ms pv) = Unit (map (rotateCellCCW pv) ms) pv
-rotateUnitCW (Unit ms pv) = Unit (map (rotateCellCW pv) ms) pv
+rotateUnit :: Rotation -> Unit -> Unit
+rotateUnit rot (Unit ms pv) = Unit (map (rotateCell rot pv) ms) pv
 
 parseCommand :: Char -> Command
 parseCommand c | c `elem` moveW  = MoveW
                | c `elem` moveE  = MoveE
                | c `elem` moveSW = MoveSW
                | c `elem` moveSE = MoveSE
-               | c `elem` rcw    = RCW
-               | c `elem` rccw   = RCCW
+               | c `elem` rcw    = Rotate CW
+               | c `elem` rccw   = Rotate CCW
                | otherwise       = error $ "Unknown command:" ++ show c
     where moveW  = "p'!.03"
           moveE  = "bcefy2"
@@ -133,8 +130,7 @@ applyCommand MoveSW (Unit ms pv) = Unit (map shift ms) (shift pv)
     where shift (Cell x y) = if even y
                              then (Cell (x - 1) (y + 1))
                              else (Cell x (y + 1))
-applyCommand RCW unit = rotateUnitCW unit
-applyCommand RCCW unit = rotateUnitCCW unit
+applyCommand (Rotate rot) unit = rotateUnit rot unit
 
 nextRand :: (Int, Int) -> (Int, Int)
 nextRand (_, x) = (fromIntegral $ (x' `quot` 2 ^ 16) `mod` 2 ^ 15, fromIntegral $ x')
