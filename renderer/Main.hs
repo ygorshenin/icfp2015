@@ -53,7 +53,11 @@ onClose rendererState = do
 onKey :: IORef RendererState -> GLFW.KeyCallback
 onKey rendererState key state = do
   when (key == GLFW.SpecialKey GLFW.ESC && state == GLFW.Press) $ do
+      putStrLn "Quit"
       modifyIORef rendererState setQuit
+  when (key == GLFW.CharKey ' ' && state == GLFW.Press) $ do
+      result <- macroStep rendererState
+      print result
 
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
@@ -143,30 +147,48 @@ display rendererState = do
   GL.loadIdentity
   drawGrid rendererState
 
-step :: IORef RendererState -> IO ()
+data Step = BlockMoved Command
+          | BlockLocked
+          | GameOver
+            deriving (Show, Eq)
+
+macroStep :: IORef RendererState -> IO Step
+macroStep rendererState = do
+  result <- step rendererState
+  case result of
+    (BlockMoved _) -> macroStep rendererState
+    _              -> return result
+
+step :: IORef RendererState -> IO Step
 step rendererState = do
   rs <- readIORef rendererState
   ts <- GL.get GLFW.time
 
-  let input = rsInput rs
-      filled = rsFilled rs
-      (unit:units) = rsUnits rs
-      (command:commands) = rsCommands rs
-
-      unit' = applyCommand command unit
-  if isBlocked input filled unit'
-  then do
-    let filled' = removeFullRows input (filled ++ (members unit))
-    writeIORef rendererState $ rs { rsUnits = units
-                                  , rsFilled = filled'
-                                  , rsCommands = commands
-                                  , rsTimestamp = ts
-                                  }
+  if null $ rsCommands rs
+  then return GameOver
   else do
-    writeIORef rendererState $ rs { rsUnits = (unit':units)
-                                  , rsCommands = commands
-                                  , rsTimestamp = ts
-                                  }
+    let input = rsInput rs
+        filled = rsFilled rs
+        (unit:units) = rsUnits rs
+        (command:commands) = rsCommands rs
+
+        unit' = applyCommand command unit
+    putStrLn $ show command
+    if isBlocked input filled unit'
+    then do
+      let filled' = removeFullRows input (filled ++ (members unit))
+      writeIORef rendererState $ rs { rsUnits = units
+                                    , rsFilled = filled'
+                                    , rsCommands = commands
+                                    , rsTimestamp = ts
+                                    }
+      return BlockLocked
+    else do
+      writeIORef rendererState $ rs { rsUnits = (unit':units)
+                                    , rsCommands = commands
+                                    , rsTimestamp = ts
+                                    }
+      return $ BlockMoved command
 
 rendererLoop :: IORef RendererState -> IO ()
 rendererLoop rendererState = do
@@ -177,7 +199,9 @@ rendererLoop rendererState = do
         rs <- readIORef rendererState
         ts <- GL.get GLFW.time
 
-        when (ts >= rsTimestamp rs + timeoutSec) $ step rendererState
+        when (ts >= rsTimestamp rs + timeoutSec) $ do
+            status <- step rendererState
+            print status
         when (not $ rsQuit rs) $ loop
   loop
 
