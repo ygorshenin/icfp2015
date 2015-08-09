@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 )
 
@@ -38,8 +39,8 @@ type Board struct {
 	cache          *BoardCache
 	problemId      int
 	lsOld          int // number of lines cleared by the last unit
-	sourceLength int
-	unitsSpawned int
+	sourceLength   int
+	unitsSpawned   int
 }
 
 type Command struct {
@@ -67,8 +68,8 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 		movesScore:     0,
 		cache:          NewBoardCache(),
 		lsOld:          0,
-		sourceLength: sourceLength,
-		unitsSpawned: 0,
+		sourceLength:   sourceLength,
+		unitsSpawned:   0,
 	}
 }
 
@@ -149,6 +150,24 @@ func (u *Unit) Rotate(dir Direction) *Unit {
 	}
 }
 
+func (u *Unit) RotateNTimes(rot int) {
+	var dir Direction
+	switch {
+	case rot == 0:
+		return
+	case rot > 0:
+		dir = DirCCW
+	case rot < 0:
+		dir = DirCW
+		rot = -rot
+	}
+	for i := 0; i < rot; i++ {
+		for i, c := range u.Cells {
+			u.Cells[i] = c.Rotate(u.Pivot, dir)
+		}
+	}
+}
+
 func (u *Unit) Move(dir Direction) *Unit {
 	switch dir {
 	case DirCW:
@@ -175,6 +194,40 @@ func (u *Unit) TopLeftCell() Cell {
 		}
 	}
 	return r
+}
+
+func (u *Unit) Equals(o *Unit) bool {
+	if len(u.Cells) != len(o.Cells) {
+		return false
+	}
+	if u.Pivot.X != o.Pivot.X || u.Pivot.Y != o.Pivot.Y {
+		return false
+	}
+	cells1 := make([]Cell, len(u.Cells))
+	cells2 := make([]Cell, len(u.Cells))
+	for i := range u.Cells {
+		cells1[i] = Cell{X: u.Cells[i].X, Y: u.Cells[i].Y}
+		cells2[i] = Cell{X: o.Cells[i].X, Y: o.Cells[i].Y}
+	}
+	sort.Sort(Cells(cells1))
+	sort.Sort(Cells(cells2))
+	for i := range u.Cells {
+		if cells1[i].X != cells2[i].X || cells1[i].Y != cells2[i].Y {
+			return false
+		}
+	}
+	return true
+}
+
+func (u *Unit) SubgroupOrder() int {
+	rot := u
+	for i := 0; i < 6; i++ {
+		rot = rot.Rotate(DirCW)
+		if u.Equals(rot) {
+			return i + 1
+		}
+	}
+	panic("subgroup order > 6")
 }
 
 func (c *Cell) Shift(x1, y1, x2, y2 int) {
@@ -267,6 +320,7 @@ func (b *Board) Spawn() error {
 		return err
 	}
 	b.unitsSpawned++
+	b.cache = NewBoardCache()
 	return nil
 }
 
@@ -446,4 +500,18 @@ func (b *Board) RemoveFullLines() {
 	}
 	b.movesScore += points
 	b.lsOld = ls
+}
+
+type Cells []Cell
+
+func (c Cells) Len() int      { return len(c) }
+func (c Cells) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
+func (c Cells) Less(i, j int) bool {
+	switch {
+	case c[i].X < c[j].X:
+		return true
+	case c[i].X > c[j].X:
+		return false
+	}
+	return c[i].Y < c[j].Y
 }

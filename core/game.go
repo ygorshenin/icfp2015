@@ -21,7 +21,7 @@ func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
 }
 
 func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
-	b.PlayGreedilyNoRotations()
+	b.PlayGreedily()
 
 	tag := fmt.Sprint(time.Now().Format(time.Stamp))
 	outputCh <- OutputEntry{
@@ -170,32 +170,29 @@ func calcScoreAfterUnitLock(b *Board, initRowCC []int, initNumCC int) int {
 	return score
 }
 
-func (b *Board) PlayGreedilyNoRotations() {
-	was := b.BoolSlice()
-	freezeDir := b.IntSlice()
-	prev := b.CellPtrSlice()
-	child := make([][][]*Cell, 4)
-	for dir := 0; dir < 4; dir++ {
-		child[dir] = b.CellPtrSlice()
-	}
+type State struct {
+	x, y int
+	rot  int
+}
 
+func (s *State) String() string {
+	return fmt.Sprintf("x=%d y=%d rot=%d", s.x, s.y, s.rot)
+}
+
+func (b *Board) PlayGreedily() {
 	unitsPlaced := 0
 	for {
-		// Initial number of connected components per each row.
 		initRowCC := calcRowsCC(b)
 		// Total initial number of connected components.
 		initNumCC := calcCC(b)
-
-		for x := 0; x < b.width; x++ {
-			for y := 0; y < b.height; y++ {
-				was[x][y] = false
-				freezeDir[x][y] = -1
-				prev[x][y] = nil
-				for dir := 0; dir < 4; dir++ {
-					child[dir][x][y] = nil
-				}
-			}
+		was := make(map[State]struct{})
+		freezeDir := make(map[State]int)
+		prev := make(map[State]State)
+		var child [6]map[State]State
+		for i := 0; i < 6; i++ {
+			child[i] = make(map[State]State)
 		}
+
 		if b.activeUnit == nil {
 			err := b.Spawn()
 			if err == GameOver {
@@ -205,65 +202,82 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic(err)
 			}
 		}
+		maxRotations := b.activeUnit.SubgroupOrder()
 
 		if err := b.RemoveActiveUnit(); err != nil {
 			panic("greedy: " + err.Error())
 		}
-
-		topLeft := b.activeUnit.TopLeftCell()
-		sx, sy := topLeft.X, topLeft.Y
-		was[sx][sy] = true
-		var qx, qy []int
-		qt := 0
-		qx = append(qx, sx)
-		qy = append(qy, sy)
-		for qt < len(qx) {
-			x, y := qx[qt], qy[qt]
-			qt++
-			b.activeUnit.Shift(sx, sy, x, y)
-			for dir := 0; dir < 4; dir++ {
-				newActiveUnit := b.activeUnit.Move(Direction(dir))
+		start := State{x: b.activeUnit.Pivot.X, y: b.activeUnit.Pivot.Y, rot: 0}
+		was[start] = struct{}{}
+		var q []State
+		q = append(q, start)
+		for qt := 0; qt < len(q); qt++ {
+			st := q[qt]
+			x, y, rot := st.x, st.y, st.rot
+			b.activeUnit.Shift(start.x, start.y, x, y)
+			b.activeUnit.RotateNTimes(+rot)
+			for dir := 0; dir < 6; dir++ {
+				var newActiveUnit *Unit
+				if dir < 4 {
+					newActiveUnit = b.activeUnit.Move(Direction(dir))
+				} else {
+					newActiveUnit = b.activeUnit.Rotate(Direction(dir))
+				}
 				if !b.CanPlace(newActiveUnit) {
-					freezeDir[x][y] = dir
+					freezeDir[st] = dir
 					continue
 				}
-				newTopLeft := newActiveUnit.TopLeftCell()
-				nx, ny := newTopLeft.X, newTopLeft.Y
-				if was[nx][ny] {
+				nx, ny, nrot := newActiveUnit.Pivot.X, newActiveUnit.Pivot.Y, rot
+				if Direction(dir) == DirCW {
+					nrot--
+					if nrot < 0 {
+						nrot += maxRotations
+					}
+				}
+				if Direction(dir) == DirCCW {
+					nrot++
+					if nrot >= maxRotations {
+						nrot -= maxRotations
+					}
+				}
+				nst := State{nx, ny, nrot}
+				if _, ok := was[nst]; ok {
 					continue
 				}
-				was[nx][ny] = true
-				qx = append(qx, nx)
-				qy = append(qy, ny)
-				child[dir][x][y] = &Cell{X: nx, Y: ny}
-				prev[nx][ny] = &Cell{X: x, Y: y}
+				was[nst] = struct{}{}
+				q = append(q, nst)
+				child[dir][st] = nst
+				prev[nst] = st
 			}
-			b.activeUnit.Shift(x, y, sx, sy)
+			b.activeUnit.RotateNTimes(-rot)
+			b.activeUnit.Shift(x, y, start.x, start.y)
 
 		}
 
-		bestX, bestY, bestScore, anyMove := 0, 0, 0, false
+		bestState, bestScore, anyMove := State{}, 0, false
 		states := 0
-		for qi := range qx {
-			x, y := qx[qi], qy[qi]
-			if freezeDir[x][y] < 0 {
+		for _, st := range q {
+			x, y, rot := st.x, st.y, st.rot
+			if _, ok := freezeDir[st]; !ok {
 				continue
 			}
 			states++
-			b.activeUnit.Shift(sx, sy, x, y)
+			b.activeUnit.Shift(start.x, start.y, x, y)
+			b.activeUnit.RotateNTimes(+rot)
 			if err := b.AddActiveUnit(); err != nil {
 				panic(err)
 			}
 
 			score := calcScoreAfterUnitLock(b, initRowCC, initNumCC)
 			if !anyMove || bestScore < score {
-				bestX, bestY, bestScore, anyMove = x, y, score, true
+				bestState, bestScore, anyMove = st, score, true
 			}
 
 			if err := b.RemoveActiveUnit(); err != nil {
 				panic(err)
 			}
-			b.activeUnit.Shift(x, y, sx, sy)
+			b.activeUnit.RotateNTimes(-rot)
+			b.activeUnit.Shift(x, y, start.x, start.y)
 		}
 		if !anyMove {
 			panic("greedy: cannot move")
@@ -273,32 +287,30 @@ func (b *Board) PlayGreedilyNoRotations() {
 			panic("greedy: " + err.Error())
 		}
 
-		var pathX, pathY []int
-		for x, y := bestX, bestY; ; {
-			pathX = append(pathX, x)
-			pathY = append(pathY, y)
-			p := prev[x][y]
-			if p == nil {
+		var path []State
+		for st := bestState; ; {
+			path = append(path, st)
+			p, ok := prev[st]
+			if !ok {
 				break
 			}
-			x, y = p.X, p.Y
+			st = p
 		}
-		// fmt.Println(pathX, pathY)
-		for i := len(pathX) - 1; i >= 0; i-- {
-			x, y := pathX[i], pathY[i]
+		for i := len(path) - 1; i >= 0; i-- {
+			st := path[i]
 			var dir int
 			if i == 0 {
-				dir = freezeDir[x][y]
+				dir = freezeDir[st]
 			} else {
-				for dir = 0; dir < 4; dir++ {
-					ch := child[dir][x][y]
-					if ch != nil && ch.X == pathX[i-1] && ch.Y == pathY[i-1] {
+				for dir = 0; dir < 6; dir++ {
+					ch, ok := child[dir][st]
+					if ok && ch == path[i-1] {
 						break
 					}
 				}
 			}
-			if dir == 4 {
-				panic("rotations are not allowed in this solution!")
+			if dir == 6 {
+				panic("could not find an edge to the next state in path")
 			}
 			cmd := Command{dir: Direction(dir), letter: directionLetters[dir][0]}
 			err := b.MoveActiveUnit(cmd)
