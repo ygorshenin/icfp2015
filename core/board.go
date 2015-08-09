@@ -38,6 +38,8 @@ type Board struct {
 	cache          *BoardCache
 	problemId      int
 	lsOld          int // number of lines cleared by the last unit
+	sourceLength int
+	unitsSpawned int
 }
 
 type Command struct {
@@ -45,7 +47,7 @@ type Command struct {
 	letter byte
 }
 
-func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableUnits []Unit, phrases []string) *Board {
+func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableUnits []Unit, phrases []string, sourceLength int) *Board {
 	occupied := make([][]bool, width)
 	for r := range occupied {
 		occupied[r] = make([]bool, height)
@@ -65,6 +67,8 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 		movesScore:     0,
 		cache:          NewBoardCache(),
 		lsOld:          0,
+		sourceLength: sourceLength,
+		unitsSpawned: 0,
 	}
 }
 
@@ -211,6 +215,9 @@ func (b *Board) Spawn() error {
 	if b.activeUnit != nil {
 		return errors.New("tried to generate a unit before freezing the previous one")
 	}
+	if b.unitsSpawned == b.sourceLength {
+		return GameOver
+	}
 	u := &b.availableUnits[b.rng.NextRand()%len(b.availableUnits)]
 	if len(u.Cells) == 0 {
 		panic("empty unit in input")
@@ -256,7 +263,10 @@ func (b *Board) Spawn() error {
 	if !b.CanPlace(b.activeUnit) {
 		return GameOver
 	}
-	b.AddActiveUnit()
+	if err := b.AddActiveUnit(); err != nil {
+		return err
+	}
+	b.unitsSpawned++
 	return nil
 }
 
@@ -399,9 +409,6 @@ func (b *Board) MoveActiveUnit(c Command) error {
 		b.gameLog += string('\n')
 	}
 
-	if b.IsEmpty() {
-		return GameOver
-	}
 	return nil
 }
 

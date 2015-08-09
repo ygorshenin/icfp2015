@@ -1,14 +1,14 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
-	//if p.SourceLength != len(p.SourceSeeds) {
-	//	panic("bad sourceLength")
-	//}
 	solCh := make(chan OutputEntry)
 	for _, seed := range p.SourceSeeds {
-		b := NewBoard(p.Height, p.Width, seed, p.Filled, p.Units, phrases)
+		b := NewBoard(p.Height, p.Width, seed, p.Filled, p.Units, phrases, p.SourceLength)
 		go b.PlayAndReport(solCh)
 	}
 	var output []OutputEntry
@@ -23,8 +23,10 @@ func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
 func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
 	b.PlayGreedilyNoRotations()
 	phrasesScore := PowerScores(b.gameLog, b.phrases)
-	tag := fmt.Sprintf("Total score: %d (%d moves + %d phrases).",
+	longTag := fmt.Sprintf("Total score: %d (%d moves + %d phrases).",
 		b.movesScore+phrasesScore, b.movesScore, phrasesScore)
+	tag := fmt.Sprint(time.Now().Format(time.Stamp))
+	_ = longTag
 	outputCh <- OutputEntry{
 		ProblemId: -1,
 		Seed:      b.rng.seed,
@@ -70,14 +72,16 @@ func (b *Board) PlayGreedilyNoRotations() {
 		if b.activeUnit == nil {
 			err := b.Spawn()
 			if err == GameOver {
-				break
+				return
 			}
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		b.RemoveActiveUnit()
+		if err := b.RemoveActiveUnit(); err != nil {
+			panic("greedy: " + err.Error())
+		}
 
 		topLeft := b.activeUnit.TopLeftCell()
 		sx, sy := topLeft.X, topLeft.Y
@@ -90,9 +94,6 @@ func (b *Board) PlayGreedilyNoRotations() {
 			x, y := qx[qt], qy[qt]
 			qt++
 			b.activeUnit.Shift(sx, sy, x, y)
-			if !b.CanPlace(b.activeUnit) {
-				panic("#")
-			}
 			for dir := 0; dir < 4; dir++ {
 				newActiveUnit := b.activeUnit.Move(Direction(dir))
 				if !b.CanPlace(newActiveUnit) {
@@ -127,23 +128,27 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic(err)
 			}
 			score := 0
-			occupiedRows := 0
+			fullRows := 0
+			occupiedTotal := 0
+			nonEmptyRows := 0
 			for y := 0; y < b.height; y++ {
 				occupiedInRow := 0
 				for x := 0; x < b.width; x++ {
 					if b.occupied[x][y] {
 						occupiedInRow++
+						occupiedTotal++
 					}
+				}
+				if occupiedInRow > 0 {
+					nonEmptyRows++
 				}
 				if occupiedInRow == b.width {
 					score += 1000
-				}
-				if occupiedInRow > 0 {
-					occupiedRows++
+					fullRows++
 				}
 			}
 			score += y // the lower the better
-			score -= occupiedRows
+			score -= fullRows
 			if err := b.RemoveActiveUnit(); err != nil {
 				panic(err)
 			}
@@ -156,7 +161,9 @@ func (b *Board) PlayGreedilyNoRotations() {
 			panic("greedy: cannot move")
 		}
 
-		b.AddActiveUnit()
+		if err := b.AddActiveUnit(); err != nil {
+			panic("greedy: " + err.Error())
+		}
 
 		var pathX, pathY []int
 		for x, y := bestX, bestY; ; {
@@ -168,7 +175,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 			}
 			x, y = p.X, p.Y
 		}
-		fmt.Println(pathX, pathY)
+		// fmt.Println(pathX, pathY)
 		for i := len(pathX) - 1; i >= 0; i-- {
 			x, y := pathX[i], pathY[i]
 			var dir int
@@ -186,14 +193,17 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic("rotations are not allowed in this solution!")
 			}
 			cmd := Command{dir: Direction(dir), letter: directionLetters[dir][0]}
-			if err := b.MoveActiveUnit(cmd); err == GameOver {
+			err := b.MoveActiveUnit(cmd)
+			if err == GameOver {
 				unitsPlaced++
+				return
+			}
+			if err != nil {
+				panic(err)
 				return
 			}
 		}
 		unitsPlaced++
-		if unitsPlaced == 2000 {
-			break
-		}
 	}
+	_ = unitsPlaced
 }
