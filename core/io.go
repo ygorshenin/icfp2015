@@ -28,10 +28,12 @@ type Unit struct {
 }
 
 type OutputEntry struct {
-	ProblemId int    `json:"problemId"`
-	Seed      uint64 `json:"seed"`
-	Tag       string `json:"tag"`
-	Solution  string `json:"solution"`
+	ProblemId    int    `json:"problemId"`
+	Seed         uint64 `json:"seed"`
+	Tag          string `json:"tag"`
+	Solution     string `json:"solution"`
+	MovesScore   int    `json:"-"`
+	PhrasesScore int    `json:"-"`
 }
 type Output []OutputEntry
 

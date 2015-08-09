@@ -22,16 +22,15 @@ func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
 
 func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
 	b.PlayGreedilyNoRotations()
-	phrasesScore := PowerScores(b.gameLog, b.phrases)
-	longTag := fmt.Sprintf("Total score: %d (%d moves + %d phrases).",
-		b.movesScore+phrasesScore, b.movesScore, phrasesScore)
+
 	tag := fmt.Sprint(time.Now().Format(time.Stamp))
-	_ = longTag
 	outputCh <- OutputEntry{
 		ProblemId: -1,
 		Seed:      b.rng.seed,
 		Tag:       tag,
 		Solution:  b.gameLog,
+		MovesScore: b.movesScore,
+		PhrasesScore : PowerScores(b.gameLog, b.phrases),
 	}
 }
 
