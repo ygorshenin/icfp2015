@@ -25,12 +25,12 @@ func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
 
 	tag := fmt.Sprint(time.Now().Format(time.Stamp))
 	outputCh <- OutputEntry{
-		ProblemId: -1,
-		Seed:      b.rng.seed,
-		Tag:       tag,
-		Solution:  b.gameLog,
-		MovesScore: b.movesScore,
-		PhrasesScore : PowerScores(b.gameLog, b.phrases),
+		ProblemId:    -1,
+		Seed:         b.rng.seed,
+		Tag:          tag,
+		Solution:     b.gameLog,
+		MovesScore:   b.movesScore,
+		PhrasesScore: PowerScores(b.gameLog, b.phrases),
 	}
 }
 
@@ -74,6 +74,42 @@ func calcRowsCC(b *Board) []int {
 	return rowsCC
 }
 
+func calcCC(b *Board) int {
+	was := b.BoolSlice()
+
+	size := b.width * b.height
+	qx, qy := make([]int, size), make([]int, size)
+
+	numCC := 0
+	for x := 0; x < b.width; x++ {
+		for y := 0; y < b.height; y++ {
+			if !b.occupied[x][y] && !was[x][y] {
+				numCC++
+				qh, qt := 0, 0
+				qx[qt], qy[qt] = x, y
+				qt++
+				was[x][y] = true
+				for qh != qt {
+					pivot := Cell{X: qx[qh], Y: qy[qh]}
+					qh++
+					next := Cell{X: pivot.X + 1, Y: pivot.Y}
+					for i := 0; i < 6; i++ {
+						cur := next.Rotate(pivot, DirCW)
+						cx, cy := cur.X, cur.Y
+						if cx >= 0 && cx < b.width && cy >= 0 && cy < b.height && !was[cx][cy] {
+							was[cx][cy] = true
+							qx[qt], qy[qt] = cx, cy
+							qt++
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return numCC
+}
+
 // Calculates number of empty cells below all unit's cells.
 func numEmptyCellsBelowActiveUnit(b *Board) int {
 	unit := b.activeUnit
@@ -88,9 +124,9 @@ func numEmptyCellsBelowActiveUnit(b *Board) int {
 }
 
 // Calculates score after unit placement.
-func calcScoreAfterUnitLock(b *Board, initCC []int) int {
+func calcScoreAfterUnitLock(b *Board, initRowCC []int, initNumCC int) int {
 	score := 0
-	currCC := calcRowsCC(b)
+	currRowCC := calcRowsCC(b)
 
 	for y := 0; y < b.height; y++ {
 		occupiedInRow := 0
@@ -103,16 +139,22 @@ func calcScoreAfterUnitLock(b *Board, initCC []int) int {
 			score += 1000
 		}
 
-		// Penalty for new connected components.
-		newCC := currCC[y] - initCC[y]
+		// Penalty for new connected components in rows.
+		newCC := currRowCC[y] - initRowCC[y]
 		if newCC > 0 {
-			score -= 50 * newCC
+			score -= 10 * newCC
 		}
 	}
 
 	y := b.activeUnit.TopLeftCell().Y
-	score += 20 * y
-	score -= 10 * numEmptyCellsBelowActiveUnit(b)
+	score += 100 * y
+
+	// +- 20 for each connected component
+	diffCC := initNumCC - calcCC(b)
+	score += 20 * diffCC
+
+	// Probably not good optimization since we alredy computing SCCs.
+	// score -= numEmptyCellsBelowActiveUnit(b)
 
 	// When number of free rows is low enough,
 	// place figures close to bounds.
@@ -120,9 +162,9 @@ func calcScoreAfterUnitLock(b *Board, initCC []int) int {
 		minX, maxX := getUnitBoundsX(b.activeUnit)
 		toLeft, toRight := minX, b.width-maxX-1
 		if toLeft > toRight {
-			score -= 5 * toRight
+			score -= 10 * toRight
 		} else {
-			score -= 5 * toLeft
+			score -= 10 * toLeft
 		}
 	}
 	return score
@@ -136,10 +178,14 @@ func (b *Board) PlayGreedilyNoRotations() {
 	for dir := 0; dir < 4; dir++ {
 		child[dir] = b.CellPtrSlice()
 	}
-	initCC := calcRowsCC(b)
 
 	unitsPlaced := 0
 	for {
+		// Initial number of connected components per each row.
+		initRowCC := calcRowsCC(b)
+		// Total initial number of connected components.
+		initNumCC := calcCC(b)
+
 		for x := 0; x < b.width; x++ {
 			for y := 0; y < b.height; y++ {
 				was[x][y] = false
@@ -209,7 +255,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic(err)
 			}
 
-			score := calcScoreAfterUnitLock(b, initCC)
+			score := calcScoreAfterUnitLock(b, initRowCC, initNumCC)
 			if !anyMove || bestScore < score {
 				bestX, bestY, bestScore, anyMove = x, y, score, true
 			}
