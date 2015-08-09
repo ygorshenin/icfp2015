@@ -3,6 +3,7 @@ module Main where
 import Control.Monad
 import Control.Monad.State
 import Data.IORef
+import Data.Maybe
 import Graphics.Rendering.OpenGL (($=), GLfloat)
 import Text.Printf (printf)
 import System.Environment
@@ -18,10 +19,10 @@ data GamesState = GameRunning
                | GamesCompleted
                  deriving (Show, Eq)
 
-data Step = BlockMoved Command
-          | BlockLocked
+data Step = UnitMoved Command
+          | UnitLocked
+          | UnitSpawned
           | CommandsCompleted
-          | InvalidBlock
           | GamePaused
             deriving (Show, Eq)
 
@@ -31,6 +32,7 @@ data RendererState = RendererState { rsQuit      :: Bool
                                    , rsState     :: GamesState
                                    , rsInput     :: Input
                                    , rsOutputs   :: [Output]
+                                   , rsUnit      :: Maybe Unit
                                    , rsUnits     :: [Unit]
                                    , rsFilled    :: [Cell]
                                    , rsCommands  :: [Command]
@@ -47,9 +49,6 @@ setGamesState state gs = gs { rsState = state }
 onStepCompleted :: Step -> IORef RendererState -> IO ()
 onStepCompleted CommandsCompleted rs = do
   putStrLn "Commands completed."
-  modifyIORef rs (setGamesState GameCompleted)
-onStepCompleted InvalidBlock rs = do
-  putStrLn "Current unit is in invalid state."
   modifyIORef rs (setGamesState GameCompleted)
 onStepCompleted _ _ = return ()
 
@@ -104,11 +103,12 @@ onKey rendererState key state = do
       writeIORef rendererState $ rs { rsPause = paused }
   when ((key == GLFW.SpecialKey GLFW.UP || key == GLFW.SpecialKey GLFW.DOWN) && state == GLFW.Press) $ do
       rs <- readIORef rendererState
-      let (unit:units) = rsUnits rs
+      let unit = rsUnit rs
           rot = if key == GLFW.SpecialKey GLFW.UP then CCW else CW
-          unit' = rotateUnit rot unit
-      putStrLn $ "Rotating current unit " ++ show rot
-      writeIORef rendererState $ rs { rsUnits = (unit':units) }
+      when (isJust unit) $ do
+        let unit' = rotateUnit rot $ fromJust unit
+        putStrLn $ "Rotating current unit " ++ show rot
+        writeIORef rendererState $ rs { rsUnit = Just unit' }
 
 hexagon :: [(GLfloat, GLfloat)]
 hexagon = [(cos angle, sin angle) | i <- [0 .. 5], let angle = pi / 6.0 + pi / 3.0 * i]
@@ -176,11 +176,12 @@ drawGrid rendererState = do
   forM_ (rsFilled rs) $ drawPointsInCell GL.Polygon filledColor hexagon
 
   -- Draws the current unit if it doesn't intersect with filled cells.
-  let unit   = head $ rsUnits rs
+  let unit   = rsUnit rs
       filled = rsFilled rs
-  when (not $ isBlocked input filled unit) $ do
-      forM_ (members unit) $ drawPointsInCell GL.Polygon unitColor hexagon
-      drawPointsInCell GL.Polygon circleColor (circle 0.2) (pivot unit)
+  when ((isJust unit) && (not . isBlocked input filled $ fromJust unit)) $ do
+      let u = fromJust unit
+      forM_ (members u) $ drawPointsInCell GL.Polygon unitColor hexagon
+      drawPointsInCell GL.Polygon circleColor (circle 0.2) (pivot u)
   return ()
 
 display :: IORef RendererState -> IO ()
@@ -195,31 +196,36 @@ macroStep :: IORef RendererState -> IO Step
 macroStep rendererState = do
   result <- step rendererState
   case result of
-    (BlockMoved _) -> macroStep rendererState
-    _              -> return result
+    (UnitMoved _) -> macroStep rendererState
+    _             -> return result
 
 step :: IORef RendererState -> IO Step
 step rendererState = do
   rs <- readIORef rendererState
   ts <- GL.get GLFW.time
 
-  if null $ rsCommands rs
-  then return CommandsCompleted
-  else if rsPause rs
+  if rsPause rs
   then return GamePaused
+  else if null $ rsCommands rs
+  then return CommandsCompleted
+  else if isNothing $ rsUnit rs
+  then do
+    when (null $ rsUnits rs) $ fail "Out of units. Too many commands."
+    let (unit:units) = rsUnits rs
+    writeIORef rendererState $ rs { rsUnit = Just unit
+                                  , rsUnits = units
+                                  }
+    return UnitSpawned
   else do
-    let input = rsInput rs
+    let input  = rsInput rs
         filled = rsFilled rs
-        (unit:units) = rsUnits rs
+        unit   = fromJust $ rsUnit rs
         (command:commands) = rsCommands rs
 
         unit' = applyCommand command unit
-    if command == LockCheck
-    then do
-      fail "Block is not locked."
-    else if isBlocked input filled unit
-    then return InvalidBlock
-    else if isBlocked input filled unit'
+    when (command == LockCheck) $ fail "Block is not locked."
+    when (isBlocked input filled unit) $ fail "Invalid unit."
+    if isBlocked input filled unit'
     then do
       let filled' = removeFullRows input (filled ++ (members unit))
           commands' = if rsCheckLock rs
@@ -227,18 +233,18 @@ step rendererState = do
                       else commands
       when (rsCheckLock rs && (head commands) /= LockCheck) $
          fail "Block is not locked."
-      writeIORef rendererState $ rs { rsUnits = units
+      writeIORef rendererState $ rs { rsUnit = Nothing
                                     , rsFilled = filled'
                                     , rsCommands = commands'
                                     , rsTimestamp = ts
                                     }
-      return BlockLocked
+      return UnitLocked
     else do
-      writeIORef rendererState $ rs { rsUnits = (unit':units)
+      writeIORef rendererState $ rs { rsUnit = Just unit'
                                     , rsCommands = commands
                                     , rsTimestamp = ts
                                     }
-      return $ BlockMoved command
+      return $ UnitMoved command
 
 rendererLoop :: IORef RendererState -> IO ()
 rendererLoop rendererState = do
@@ -272,7 +278,8 @@ initState cl input outputs = do
                          , rsState     = GameRunning
                          , rsInput     = input
                          , rsOutputs   = outputs
-                         , rsUnits     = genUnits input s
+                         , rsUnit      = Nothing
+                         , rsUnits     = take (sourceLength input) $ genUnits input s
                          , rsFilled    = filled input
                          , rsCommands  = solution output
                          , rsTimestamp = timestamp
