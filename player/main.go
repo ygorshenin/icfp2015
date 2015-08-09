@@ -40,6 +40,9 @@ func init() {
 
 func main() {
 	flag.Parse()
+	if len(phrases) == 0 {
+		phrases = strings(core.KnownPhrases)
+	}
 	runtime.GOMAXPROCS(*processorCores)
 	outputCh := make(chan []core.OutputEntry)
 	for _, filename := range filenames {

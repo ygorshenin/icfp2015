@@ -24,13 +24,14 @@ func (b *Board) PlayAndReport(outputCh chan OutputEntry) {
 	b.PlayGreedily()
 
 	tag := fmt.Sprint(time.Now().Format(time.Stamp))
+	solution := OptimizeSolution(b.gameLog, b.phrases)
 	outputCh <- OutputEntry{
 		ProblemId:    -1,
 		Seed:         b.rng.seed,
 		Tag:          tag,
-		Solution:     b.gameLog,
+		Solution:     solution,
 		MovesScore:   b.movesScore,
-		PhrasesScore: PowerScores(b.gameLog, b.phrases),
+		PhrasesScore: PowerScores(solution, b.phrases),
 	}
 }
 
@@ -81,7 +82,7 @@ func (b *Board) CountHoles() int {
 	numHoles := 0
 	for x := 0; x < b.width; x++ {
 		for y := 0; y < b.height; y++ {
-			if !b.occupied[x][y] || was[x][y] {
+			if b.occupied[x][y] || was[x][y] {
 				continue
 			}
 			numHoles++
@@ -144,7 +145,7 @@ func СalcScoreAfterUnitLock(b *Board, initRowCC []int, initHoles int) int {
 	}
 	y := b.activeUnit.TopLeftCell().Y
 	score += 100 * y
-	
+
 	// +- 20 for each hole
 	diffHoles := initHoles - b.CountHoles()
 	score += 20 * diffHoles
@@ -166,6 +167,16 @@ func СalcScoreAfterUnitLock(b *Board, initRowCC []int, initHoles int) int {
 	return score
 }
 
+func HowManyRotations(a, b *Unit) int {
+	for i := 0; i < 6; i++ {
+		if a.Equals(b) {
+			return i
+		}
+		a = a.Rotate(DirCCW)
+	}
+	panic("incompatible units" + a.String() + " " + b.String())
+}
+
 type State struct {
 	x, y int
 	rot  int
@@ -175,10 +186,20 @@ func (s *State) String() string {
 	return fmt.Sprintf("x=%d y=%d rot=%d", s.x, s.y, s.rot)
 }
 
+func RelativePosition(center, u *Unit) State {
+	x, y := u.Pivot.X, u.Pivot.Y
+	sx, sy := center.Pivot.X, center.Pivot.Y
+	center.Shift(sx, sy, x, y)
+	rot := HowManyRotations(center, u)
+	center.Shift(x, y, sx, sy)
+	return State{x: x, y: y, rot: rot}
+}
+
 func (b *Board) PlayGreedily() {
 	unitsPlaced := 0
 	timePerUnit := TimeLimit / time.Duration(b.sourceLength)
-	fmt.Println(TimeLimit,b.sourceLength,timePerUnit)
+	unusedPhrases := b.phrases
+
 	for {
 		initRowCC := CountConnectedComponentsInRows(b)
 		// Total initial number of connected components.
@@ -200,6 +221,32 @@ func (b *Board) PlayGreedily() {
 				panic(err)
 			}
 		}
+
+		var pronouncedPhrasePositions []*Unit
+		for i, phrase := range unusedPhrases {
+			if b.CanPronounceAtOnce(phrase) {
+				dirs := PhraseToDirections(phrase)
+				for i, dir := range dirs {
+					cmd := Command{dir: Direction(dir), letter: phrase[i]}
+					pronouncedPhrasePositions = append(pronouncedPhrasePositions, b.activeUnit.Clone())
+					err := b.MoveActiveUnit(cmd)
+					if err == GameOver {
+						return
+					}
+					if err != nil {
+						panic(err)
+						return
+					}
+				}
+				// remove it
+				unusedPhrases[i] = unusedPhrases[len(unusedPhrases)-1]
+				unusedPhrases = unusedPhrases[:len(unusedPhrases)-1]
+
+				// note that we could not have frozen the active unit here
+				break
+			}
+		}
+
 		maxRotations := b.activeUnit.SubgroupOrder()
 
 		if err := b.RemoveActiveUnit(); err != nil {
@@ -210,6 +257,10 @@ func (b *Board) PlayGreedily() {
 		var q []State
 		q = append(q, start)
 		qStartTime := time.Now()
+		for _, u := range pronouncedPhrasePositions {
+			st := RelativePosition(b.activeUnit, u)
+			was[st] = struct{}{}
+		}
 		for qt := 0; qt < len(q); qt++ {
 			if Timeout(qStartTime, time.Duration(qt+1)*timePerUnit) {
 				break

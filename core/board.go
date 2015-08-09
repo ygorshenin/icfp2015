@@ -150,7 +150,7 @@ func (u *Unit) Rotate(dir Direction) *Unit {
 	}
 	return &Unit{
 		Cells: cells,
-		Pivot: u.Pivot,
+		Pivot: Cell{X: u.Pivot.X, Y: u.Pivot.Y},
 	}
 }
 
@@ -198,6 +198,17 @@ func (u *Unit) TopLeftCell() Cell {
 		}
 	}
 	return r
+}
+
+func (u *Unit) Clone() *Unit {
+	cells := make([]Cell, len(u.Cells))
+	for i, c := range u.Cells {
+		cells[i] = Cell{X: c.X, Y: c.Y}
+	}
+	return &Unit{
+		Cells: cells,
+		Pivot: Cell{X: u.Pivot.X, Y: u.Pivot.Y},
+	}
 }
 
 func (u *Unit) Equals(o *Unit) bool {
