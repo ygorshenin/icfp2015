@@ -55,7 +55,6 @@ func (b *Board) PlayGreedilyNoRotations() {
 		child[dir] = b.CellPtrSlice()
 	}
 
-	cnt := 0
 	for {
 		for x := 0; x < b.width; x++ {
 			for y := 0; y < b.height; y++ {
@@ -89,7 +88,10 @@ func (b *Board) PlayGreedilyNoRotations() {
 		for qt < len(qx) {
 			x, y := qx[qt], qy[qt]
 			qt++
-			b.activeUnit.Shift(x-sx, y-sy)
+			b.activeUnit.Shift(sx, sy, x, y)
+			if !b.CanPlace(b.activeUnit) {
+				panic("#")
+			}
 			for dir := 0; dir < 4; dir++ {
 				newActiveUnit := b.activeUnit.Move(Direction(dir))
 				if !b.CanPlace(newActiveUnit) {
@@ -106,9 +108,9 @@ func (b *Board) PlayGreedilyNoRotations() {
 				qy = append(qy, ny)
 				child[dir][x][y] = &Cell{X: nx, Y: ny}
 				prev[nx][ny] = &Cell{X: x, Y: y}
-
 			}
-			b.activeUnit.Shift(-x+sx, -y+sy)
+			b.activeUnit.Shift(x, y, sx, sy)
+
 		}
 
 		bestX, bestY, bestScore, anyMove := 0, 0, 0, false
@@ -119,8 +121,10 @@ func (b *Board) PlayGreedilyNoRotations() {
 				continue
 			}
 			states++
-			b.activeUnit.Shift(x-sx, y-sy)
-			b.AddActiveUnit()
+			b.activeUnit.Shift(sx, sy, x, y)
+			if err := b.AddActiveUnit(); err != nil {
+				panic(err)
+			}
 			score := 0
 			occupiedRows := 0
 			for y := 0; y < b.height; y++ {
@@ -139,15 +143,14 @@ func (b *Board) PlayGreedilyNoRotations() {
 			}
 			score += y // the lower the better
 			score -= occupiedRows
-			b.RemoveActiveUnit()
-			b.activeUnit.Shift(-x+sx, -y+sy)
+			if err := b.RemoveActiveUnit(); err != nil {
+				panic(err)
+			}
+			b.activeUnit.Shift(x, y, sx, sy)
 			if !anyMove || bestScore < score {
 				bestX, bestY, bestScore, anyMove = x, y, score, true
 			}
 		}
-
-		fmt.Println(bestScore, bestX, bestY, b.width, b.height)
-
 		if !anyMove {
 			panic("greedy: cannot move")
 		}
@@ -174,10 +177,6 @@ func (b *Board) PlayGreedilyNoRotations() {
 				for dir = 0; dir < 4; dir++ {
 					ch := child[dir][x][y]
 					if ch != nil && ch.X == pathX[i-1] && ch.Y == pathY[i-1] {
-						z := prev[pathX[i-1]][pathY[i-1]]
-						if z.X != x || z.Y != y {
-							panic("@")
-						}
 						break
 					}
 				}
@@ -187,10 +186,6 @@ func (b *Board) PlayGreedilyNoRotations() {
 			}
 			cmd := Command{dir: Direction(dir), letter: directionLetters[dir][0]}
 			b.MoveActiveUnit(cmd)
-		}
-		cnt++
-		if cnt == 1 {
-			break
 		}
 	}
 }

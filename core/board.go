@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 )
 
@@ -80,20 +81,21 @@ func (b *Board) HasUnit(u *Unit) bool {
 	return true
 }
 
+func cubeToOddRowOffset(x, y, z int) (col, row int) {
+	col = x + (z-(z&1))/2
+	row = z
+	return
+}
+
+func oddRowOffsetToCube(col, row int) (x, y, z int) {
+	x = col - (row-(row&1))/2
+	z = row
+	y = -x - z
+	return
+}
+
 // http://www.redblobgames.com/grids/hexagons/#rotation
 func (c *Cell) Rotate(pivot Cell, dir Direction) Cell {
-	cubeToOddRowOffset := func(x, y, z int) (col, row int) {
-		col = x + (z-(z&1))/2
-		row = z
-		return
-	}
-	oddRowOffsetToCube := func(col, row int) (x, y, z int) {
-		x = col - (row-(row&1))/2
-		z = row
-		y = -x - z
-		return
-	}
-
 	x, y, z := oddRowOffsetToCube(c.X, c.Y)
 	px, py, pz := oddRowOffsetToCube(pivot.X, pivot.Y)
 	x, y, z = x-px, y-py, z-pz
@@ -171,13 +173,20 @@ func (u *Unit) TopLeftCell() Cell {
 	return r
 }
 
-func (u *Unit) Shift(x, y int) {
+func (c *Cell) Shift(x1, y1, x2, y2 int) {
+	a1, b1, c1 := oddRowOffsetToCube(x1, y1)
+	a2, b2, c2 := oddRowOffsetToCube(x2, y2)
+	a3, b3, c3 := oddRowOffsetToCube(c.X, c.Y)
+	c.X, c.Y = cubeToOddRowOffset(a3+a2-a1, b3+b2-b1, c3+c2-c1)
+}
+
+// If (x1, y1) maps to (x2, y2),
+// u maps to Shift(u).
+func (u *Unit) Shift(x1, y1, x2, y2 int) {
 	for i := range u.Cells {
-		u.Cells[i].X += x
-		u.Cells[i].Y += y
+		u.Cells[i].Shift(x1, y1, x2, y2)
 	}
-	u.Pivot.X += x
-	u.Pivot.Y += y
+	u.Pivot.Shift(x1, y1, x2, y2)
 }
 
 func (c *Cell) String() string {
@@ -328,6 +337,35 @@ func (b *Board) IsEmpty() bool {
 		}
 	}
 	return true
+}
+
+func (b *Board) Print() {
+	s := make([][]rune, b.height)
+	for y := 0; y < b.height; y++ {
+		s[y] = make([]rune, b.width)
+	}
+	for x := 0; x < b.width; x++ {
+		for y := 0; y < b.height; y++ {
+			if b.occupied[x][y] {
+				s[y][x] = '⬢'
+			} else {
+				s[y][x] = '⬡'
+			}
+		}
+	}
+	if b.activeUnit != nil {
+		for _, c := range b.activeUnit.Cells {
+			s[c.Y][c.X] = '*'
+		}
+		s[b.activeUnit.Pivot.Y][b.activeUnit.Pivot.X] = 'o'
+	}
+	for y := 0; y < b.height; y++ {
+		if y%2 == 1 {
+			fmt.Print(" ")
+		}
+		fmt.Println(string(s[y]))
+	}
+	fmt.Println()
 }
 
 func (b *Board) MoveActiveUnit(c Command) error {
