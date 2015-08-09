@@ -177,6 +177,8 @@ func (s *State) String() string {
 
 func (b *Board) PlayGreedily() {
 	unitsPlaced := 0
+	timePerUnit := TimeLimit / time.Duration(b.sourceLength)
+	fmt.Println(TimeLimit,b.sourceLength,timePerUnit)
 	for {
 		initRowCC := CountConnectedComponentsInRows(b)
 		// Total initial number of connected components.
@@ -207,7 +209,11 @@ func (b *Board) PlayGreedily() {
 		was[start] = struct{}{}
 		var q []State
 		q = append(q, start)
+		qStartTime := time.Now()
 		for qt := 0; qt < len(q); qt++ {
+			if Timeout(qStartTime, time.Duration(qt+1)*timePerUnit) {
+				break
+			}
 			st := q[qt]
 			x, y, rot := st.x, st.y, st.rot
 			b.activeUnit.Shift(start.x, start.y, x, y)

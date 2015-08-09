@@ -437,8 +437,8 @@ func (b *Board) Print() {
 }
 
 func (b *Board) MoveActiveUnit(c Command) error {
-	if err := TimeOut(); err != nil {
-		return err
+	if AlmostNoTimeLeft() {
+		return GameOver
 	}
 	if b.activeUnit == nil {
 		if err := b.Spawn(); err != nil {
