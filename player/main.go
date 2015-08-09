@@ -72,10 +72,10 @@ func main() {
 			fmt.Println("Provide exactly one file with -f and provide output file with -o in order to use visualizer.")
 			return
 		}
-		cmd := exec.Command(*visualizerPath, "-w", "500", "-h","500", "-i",filenames[0], "-o",*outfile)
-		b, err := cmd.CombinedOutput()
-		fmt.Println(string(b))
-		if err != nil {
+		cmd := exec.Command(*visualizerPath, "-w", "500", "-h", "500", "-i", filenames[0], "-o", *outfile)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
 			panic("running visualizer: " + err.Error())
 		}
 	}
