@@ -2,3 +2,5 @@
 *.o
 *~
 Main
+problems/*.out.json
+*.pdf

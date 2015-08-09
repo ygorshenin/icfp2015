@@ -47,10 +47,10 @@ func (b *Board) PlayRandomly() {
 	}
 }
 
-func getUnitBoundsX(unit *Unit) (int, int) {
-	minX, maxX := 999, 0
-	for _, cell := range unit.Cells {
-		x := cell.X
+func GetUnitBoundsX(u *Unit) (int, int) {
+	minX, maxX := u.Cells[0].X, u.Cells[0].X
+	for _, c := range u.Cells {
+		x := c.X
 		if x < minX {
 			minX = x
 		}
@@ -62,7 +62,7 @@ func getUnitBoundsX(unit *Unit) (int, int) {
 }
 
 // Computes number of connected components in each row.
-func calcRowsCC(b *Board) []int {
+func CountConnectedComponentsInRows(b *Board) []int {
 	rowsCC := make([]int, b.height)
 	for y := 0; y < b.height; y++ {
 		for x := 0; x < b.width; x++ {
@@ -74,40 +74,38 @@ func calcRowsCC(b *Board) []int {
 	return rowsCC
 }
 
-func calcCC(b *Board) int {
+func (b *Board) CountHoles() int {
 	was := b.BoolSlice()
-
 	size := b.width * b.height
 	qx, qy := make([]int, size), make([]int, size)
-
-	numCC := 0
+	numHoles := 0
 	for x := 0; x < b.width; x++ {
 		for y := 0; y < b.height; y++ {
-			if !b.occupied[x][y] && !was[x][y] {
-				numCC++
-				qh, qt := 0, 0
-				qx[qt], qy[qt] = x, y
+			if !b.occupied[x][y] || was[x][y] {
+				continue
+			}
+			numHoles++
+			qt, qh := 0, 0
+			qx[qh], qy[qh] = x, y
+			qh++
+			was[x][y] = true
+			for qt != qh {
+				pivot := Cell{X: qx[qt], Y: qy[qt]}
 				qt++
-				was[x][y] = true
-				for qh != qt {
-					pivot := Cell{X: qx[qh], Y: qy[qh]}
-					qh++
-					next := Cell{X: pivot.X + 1, Y: pivot.Y}
-					for i := 0; i < 6; i++ {
-						cur := next.Rotate(pivot, DirCW)
-						cx, cy := cur.X, cur.Y
-						if cx >= 0 && cx < b.width && cy >= 0 && cy < b.height && !was[cx][cy] {
-							was[cx][cy] = true
-							qx[qt], qy[qt] = cx, cy
-							qt++
-						}
+				next := Cell{X: pivot.X + 1, Y: pivot.Y}
+				for i := 0; i < 6; i++ {
+					cur := next.Rotate(pivot, DirCW)
+					cx, cy := cur.X, cur.Y
+					if b.HasCoords(cx, cy) && !was[cx][cy] && b.occupied[x][y] {
+						was[cx][cy] = true
+						qx[qh], qy[qh] = cx, cy
+						qh++
 					}
 				}
 			}
 		}
 	}
-
-	return numCC
+	return numHoles
 }
 
 // Calculates number of empty cells below all unit's cells.
@@ -124,10 +122,9 @@ func numEmptyCellsBelowActiveUnit(b *Board) int {
 }
 
 // Calculates score after unit placement.
-func calcScoreAfterUnitLock(b *Board, initRowCC []int, initNumCC int) int {
+func СalcScoreAfterUnitLock(b *Board, initRowCC []int, initHoles int) int {
 	score := 0
-	currRowCC := calcRowsCC(b)
-
+	currRowCC := CountConnectedComponentsInRows(b)
 	for y := 0; y < b.height; y++ {
 		occupiedInRow := 0
 		for x := 0; x < b.width; x++ {
@@ -145,13 +142,12 @@ func calcScoreAfterUnitLock(b *Board, initRowCC []int, initNumCC int) int {
 			score -= 10 * newCC
 		}
 	}
-
 	y := b.activeUnit.TopLeftCell().Y
 	score += 100 * y
-
-	// +- 20 for each connected component
-	diffCC := initNumCC - calcCC(b)
-	score += 20 * diffCC
+	
+	// +- 20 for each hole
+	diffHoles := initHoles - b.CountHoles()
+	score += 20 * diffHoles
 
 	// Probably not good optimization since we alredy computing SCCs.
 	// score -= numEmptyCellsBelowActiveUnit(b)
@@ -159,7 +155,7 @@ func calcScoreAfterUnitLock(b *Board, initRowCC []int, initNumCC int) int {
 	// When number of free rows is low enough,
 	// place figures close to bounds.
 	if y < 5 {
-		minX, maxX := getUnitBoundsX(b.activeUnit)
+		minX, maxX := GetUnitBoundsX(b.activeUnit)
 		toLeft, toRight := minX, b.width-maxX-1
 		if toLeft > toRight {
 			score -= 10 * toRight
@@ -182,9 +178,9 @@ func (s *State) String() string {
 func (b *Board) PlayGreedily() {
 	unitsPlaced := 0
 	for {
-		initRowCC := calcRowsCC(b)
+		initRowCC := CountConnectedComponentsInRows(b)
 		// Total initial number of connected components.
-		initNumCC := calcCC(b)
+		initHoles := b.CountHoles()
 		was := make(map[State]struct{})
 		freezeDir := make(map[State]int)
 		prev := make(map[State]State)
@@ -268,7 +264,7 @@ func (b *Board) PlayGreedily() {
 				panic(err)
 			}
 
-			score := calcScoreAfterUnitLock(b, initRowCC, initNumCC)
+			score := СalcScoreAfterUnitLock(b, initRowCC, initHoles)
 			if !anyMove || bestScore < score {
 				bestState, bestScore, anyMove = st, score, true
 			}

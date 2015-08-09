@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"../core"
 )
@@ -23,7 +24,7 @@ func (s *strings) Set(value string) error {
 
 var (
 	filenames      strings
-	timeLimit      = flag.Int("t", 0, "Time limit, in seconds, to produce output")
+	timeLimit      = flag.Float64("t", 60, "Time limit, in seconds, to produce output")
 	memoryLimit    = flag.Int("m", 0, "Memory limit, in megabytes, to produce output")
 	processorCores = flag.Int("c", runtime.NumCPU(), "Number of processor cores available")
 	phrases        strings
@@ -48,6 +49,10 @@ func main() {
 		}
 		go core.PlayProblem(p, phrases, outputCh)
 	}
+
+	core.StartTime = time.Now()
+	core.TimeLimit = time.Duration(time.Second) * time.Duration(*timeLimit)
+
 	var output []core.OutputEntry
 	for range filenames {
 		o := <-outputCh

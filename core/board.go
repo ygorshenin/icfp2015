@@ -73,6 +73,10 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 	}
 }
 
+func (b *Board) HasCoords(x, y int) bool {
+	return x >= 0 && x < b.width && y >= 0 && y < b.height
+}
+
 func (b *Board) HasCell(c Cell) bool {
 	return c.X >= 0 && c.X < b.width && c.Y >= 0 && c.Y < b.height
 }
@@ -433,6 +437,9 @@ func (b *Board) Print() {
 }
 
 func (b *Board) MoveActiveUnit(c Command) error {
+	if err := TimeOut(); err != nil {
+		return err
+	}
 	if b.activeUnit == nil {
 		if err := b.Spawn(); err != nil {
 			return err
@@ -466,10 +473,6 @@ func (b *Board) MoveActiveUnit(c Command) error {
 	return nil
 }
 
-// TODO Should we update cache here?
-// What if a previously visited state is visited after
-// some of the rows disappear?
-// For now, consider this scenario unlikely and ignore it.
 func (b *Board) RemoveFullLines() {
 	ls := 0
 	for y := b.height - 1; y >= 0; y-- {
