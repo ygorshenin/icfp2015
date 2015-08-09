@@ -1,6 +1,9 @@
 package core
 
-import "errors"
+import (
+	"errors"
+	"sort"
+)
 
 var GameOver = errors.New("Game over")
 var PositionRepeated = errors.New("move leads into a previously seen state")
@@ -9,32 +12,35 @@ type BoardCache struct {
 	seen map[uint64]struct{}
 }
 
-func (bc *BoardCache) ComputeHash(b *Board) uint64 {
-	var h uint64
-	for x := 0; x < b.width; x++ {
-		for y := 0; y < b.height; y++ {
-			h = h * 1000000007
-			if b.occupied[x][y] {
-				h++
-			}
-		}
+func (bc *BoardCache) CellHash(c Cell) uint64 {
+	return 5501*uint64(c.X) + uint64(c.Y)
+}
+
+func (bc *BoardCache) BoardHash(b *Board) uint64 {
+	u := b.activeUnit
+	if u == nil {
+		return 0
+	}
+	cells := make([]Cell, len(u.Cells))
+	for i := range u.Cells {
+		cells[i] = Cell{X: u.Cells[i].X, Y: u.Cells[i].Y}
+	}
+	sort.Sort(Cells(cells))
+	h := bc.CellHash(u.Pivot)
+	for _, c := range cells {
+		h = 1000000007*h + bc.CellHash(c)
 	}
 	return h
 }
 
 func (bc *BoardCache) Add(b *Board) {
-	h := bc.ComputeHash(b)
+	h := bc.BoardHash(b)
 	bc.seen[h] = struct{}{}
 }
 
 // Assuming no collisions.
 func (bc *BoardCache) Seen(b *Board) bool {
-	h := bc.ComputeHash(b)
-	if h == 0 {	
-		// Empty board results in Game Over and does
-		// not violate the rules.
-		return false
-	}
+	h := bc.BoardHash(b)
 	_, ok := bc.seen[h]
 	return ok
 }
