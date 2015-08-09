@@ -48,6 +48,32 @@ func (b *Board) PlayRandomly() {
 	}
 }
 
+func calcScoreAfterUnitLock(b *Board) int {
+	score := 0
+	fullRows := 0
+	occupiedTotal := 0
+	nonEmptyRows := 0
+
+	for y := 0; y < b.height; y++ {
+		occupiedInRow := 0
+		for x := 0; x < b.width; x++ {
+			if b.occupied[x][y] {
+				occupiedInRow++
+				occupiedTotal++
+			}
+		}
+		if occupiedInRow > 0 {
+			nonEmptyRows++
+		}
+		if occupiedInRow == b.width {
+			score += 1000
+			fullRows++
+		}
+	}
+	score += 5 * b.activeUnit.TopLeftCell().Y // the lower the better
+	return score
+}
+
 func (b *Board) PlayGreedilyNoRotations() {
 	was := b.BoolSlice()
 	freezeDir := b.IntSlice()
@@ -127,35 +153,16 @@ func (b *Board) PlayGreedilyNoRotations() {
 			if err := b.AddActiveUnit(); err != nil {
 				panic(err)
 			}
-			score := 0
-			fullRows := 0
-			occupiedTotal := 0
-			nonEmptyRows := 0
-			for y := 0; y < b.height; y++ {
-				occupiedInRow := 0
-				for x := 0; x < b.width; x++ {
-					if b.occupied[x][y] {
-						occupiedInRow++
-						occupiedTotal++
-					}
-				}
-				if occupiedInRow > 0 {
-					nonEmptyRows++
-				}
-				if occupiedInRow == b.width {
-					score += 1000
-					fullRows++
-				}
+
+			score := calcScoreAfterUnitLock(b)
+			if !anyMove || bestScore < score {
+				bestX, bestY, bestScore, anyMove = x, y, score, true
 			}
-			score += y // the lower the better
-			score -= fullRows
+
 			if err := b.RemoveActiveUnit(); err != nil {
 				panic(err)
 			}
 			b.activeUnit.Shift(x, y, sx, sy)
-			if !anyMove || bestScore < score {
-				bestX, bestY, bestScore, anyMove = x, y, score, true
-			}
 		}
 		if !anyMove {
 			panic("greedy: cannot move")
