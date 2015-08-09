@@ -55,6 +55,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 		child[dir] = b.CellPtrSlice()
 	}
 
+	unitsPlaced := 0
 	for {
 		for x := 0; x < b.width; x++ {
 			for y := 0; y < b.height; y++ {
@@ -185,7 +186,14 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic("rotations are not allowed in this solution!")
 			}
 			cmd := Command{dir: Direction(dir), letter: directionLetters[dir][0]}
-			b.MoveActiveUnit(cmd)
+			if err := b.MoveActiveUnit(cmd); err == GameOver {
+				unitsPlaced++
+				return
+			}
+		}
+		unitsPlaced++
+		if unitsPlaced == 2000 {
+			break
 		}
 	}
 }
