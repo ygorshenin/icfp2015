@@ -48,29 +48,84 @@ func (b *Board) PlayRandomly() {
 	}
 }
 
-func calcScoreAfterUnitLock(b *Board) int {
+func getUnitBoundsX(unit *Unit) (int, int) {
+	minX, maxX := 999, 0
+	for _, cell := range unit.Cells {
+		x := cell.X
+		if x < minX {
+			minX = x
+		}
+		if x > maxX {
+			maxX = x
+		}
+	}
+	return minX, maxX
+}
+
+// Computes number of connected components in each row.
+func calcRowsCC(b *Board) []int {
+	rowsCC := make([]int, b.height)
+	for y := 0; y < b.height; y++ {
+		for x := 0; x < b.width; x++ {
+			if b.occupied[x][y] && (x == 0 || !b.occupied[x-1][y]) {
+				rowsCC[y]++
+			}
+		}
+	}
+	return rowsCC
+}
+
+// Calculates number of empty cells below all unit's cells.
+func numEmptyCellsBelowActiveUnit(b *Board) int {
+	unit := b.activeUnit
+	emptyCells := 0
+	for _, cell := range unit.Cells {
+		x, y := cell.X, cell.Y
+		if y+1 < b.height && !b.occupied[x][y+1] {
+			emptyCells++
+		}
+	}
+	return emptyCells
+}
+
+// Calculates score after unit placement.
+func calcScoreAfterUnitLock(b *Board, initCC []int) int {
 	score := 0
-	fullRows := 0
-	occupiedTotal := 0
-	nonEmptyRows := 0
+	currCC := calcRowsCC(b)
 
 	for y := 0; y < b.height; y++ {
 		occupiedInRow := 0
 		for x := 0; x < b.width; x++ {
 			if b.occupied[x][y] {
 				occupiedInRow++
-				occupiedTotal++
 			}
-		}
-		if occupiedInRow > 0 {
-			nonEmptyRows++
 		}
 		if occupiedInRow == b.width {
 			score += 1000
-			fullRows++
+		}
+
+		// Penalty for new connected components.
+		newCC := currCC[y] - initCC[y]
+		if newCC > 0 {
+			score -= 50 * newCC
 		}
 	}
-	score += 5 * b.activeUnit.TopLeftCell().Y // the lower the better
+
+	y := b.activeUnit.TopLeftCell().Y
+	score += 20 * y
+	score -= 10 * numEmptyCellsBelowActiveUnit(b)
+
+	// When number of free rows is low enough,
+	// place figures close to bounds.
+	if y < 5 {
+		minX, maxX := getUnitBoundsX(b.activeUnit)
+		toLeft, toRight := minX, b.width-maxX-1
+		if toLeft > toRight {
+			score -= 5 * toRight
+		} else {
+			score -= 5 * toLeft
+		}
+	}
 	return score
 }
 
@@ -82,6 +137,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 	for dir := 0; dir < 4; dir++ {
 		child[dir] = b.CellPtrSlice()
 	}
+	initCC := calcRowsCC(b)
 
 	unitsPlaced := 0
 	for {
@@ -154,7 +210,7 @@ func (b *Board) PlayGreedilyNoRotations() {
 				panic(err)
 			}
 
-			score := calcScoreAfterUnitLock(b)
+			score := calcScoreAfterUnitLock(b, initCC)
 			if !anyMove || bestScore < score {
 				bestX, bestY, bestScore, anyMove = x, y, score, true
 			}
