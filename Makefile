@@ -1,4 +1,4 @@
-.PHONY: solution renderer all clean
+.PHONY: solution renderer all clean submission
 
 solution:
 	(cd player; $(MAKE); cp play_icfp2015 ..)
@@ -8,5 +8,10 @@ renderer:
 	
 all: solution renderer
 
+submission:
+	git archive master | gzip > submission.tar.gz
+
 clean:
-	rm play_icfp2015
+	rm -f play_icfp2015
+	rm -f submission.tar.gz
+
