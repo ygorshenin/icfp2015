@@ -56,6 +56,10 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 	for _, c := range initialOccupied {
 		occupied[c.X][c.Y] = true
 	}
+	phrasesCopy := make([]string, len(phrases))
+	for i := range phrases {
+		phrasesCopy[i] = phrases[i]
+	}
 	return &Board{
 		height:         height,
 		width:          width,
@@ -64,7 +68,7 @@ func NewBoard(height, width int, seed uint64, initialOccupied []Cell, availableU
 		activeUnit:     nil,
 		gameLog:        "",
 		availableUnits: availableUnits,
-		phrases:        phrases,
+		phrases:        phrasesCopy,
 		movesScore:     0,
 		cache:          NewBoardCache(),
 		lsOld:          0,

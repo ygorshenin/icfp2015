@@ -24,18 +24,18 @@ func (s *strings) Set(value string) error {
 
 var (
 	filenames      strings
-	timeLimit      = flag.Float64("t", 60, "Time limit, in seconds, to produce output")
-	memoryLimit    = flag.Int("m", 0, "Memory limit, in megabytes, to produce output")
-	processorCores = flag.Int("c", runtime.NumCPU(), "Number of processor cores available")
+	timeLimit      = flag.Float64("t", 60, "Time limit, in seconds, to produce output.")
+	memoryLimit    = flag.Int("m", 0, "Memory limit, in megabytes, to produce output.")
+	processorCores = flag.Int("c", runtime.NumCPU(), "Number of processor cores available.")
 	phrases        strings
 	outfile        = flag.String("o", "", "Name of the file where output should be stored.")
 	showScores     = flag.Bool("scores", false, "Scores are printed to stdout if set.")
-	visualizerPath = flag.String("v", "", "Path to the visualizer")
+	visualizerPath = flag.String("v", "", "Path to the visualizer.")
 )
 
 func init() {
-	flag.Var(&filenames, "f", "Files containing JSON encoded input")
-	flag.Var(&phrases, "p", "Phrases of power")
+	flag.Var(&filenames, "f", "Files containing JSON encoded input.")
+	flag.Var(&phrases, "p", "Phrases of power.")
 }
 
 func main() {
@@ -43,6 +43,8 @@ func main() {
 	if len(phrases) == 0 {
 		phrases = strings(core.KnownPhrases)
 	}
+	core.StartTime = time.Now()
+	core.TimeLimit = time.Duration(time.Second) * time.Duration(*timeLimit)
 	runtime.GOMAXPROCS(*processorCores)
 	outputCh := make(chan []core.OutputEntry)
 	for _, filename := range filenames {
@@ -51,10 +53,8 @@ func main() {
 			panic(err)
 		}
 		go core.PlayProblem(p, phrases, outputCh)
+		core.TimeSet <- true
 	}
-
-	core.StartTime = time.Now()
-	core.TimeLimit = time.Duration(time.Second) * time.Duration(*timeLimit)
 
 	var output []core.OutputEntry
 	for range filenames {

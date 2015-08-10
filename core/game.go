@@ -6,6 +6,7 @@ import (
 )
 
 func PlayProblem(p Problem, phrases []string, outputCh chan []OutputEntry) {
+	<-TimeSet
 	solCh := make(chan OutputEntry)
 	for _, seed := range p.SourceSeeds {
 		b := NewBoard(p.Height, p.Width, seed, p.Filled, p.Units, phrases, p.SourceLength)
